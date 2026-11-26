@@ -254,7 +254,7 @@ abstract class DynamicRouterBase extends Controller
         /*
          * 5. Security pipeline production.
          */
-        if (ENVIRONMENT === 'production' || ENVIRONMENT === 'development') {
+        if (ENVIRONMENT === 'production') {
 
             /*
              * 5.1 Controller allowlist.
@@ -443,7 +443,7 @@ abstract class DynamicRouterBase extends Controller
         /*
          * 7. After route hooks.
          */
-       if (ENVIRONMENT === 'production' || ENVIRONMENT === 'development') {
+        if (ENVIRONMENT === 'production') {
             foreach ($this->afterRouteHooks as $hook) {
                 $this->assertHookCallable(
                     $hook,
@@ -463,23 +463,43 @@ abstract class DynamicRouterBase extends Controller
     }
 
     /**
- * Pastikan parameter route berupa list positional (0..n-1) berisi string.
- * Array asosiatif diubah berdasarkan urutan insertion, BUKAN nama.
- * Jika ada kunci non-sequential, log & tolak (fail-closed).
- */
+     * Pastikan parameter route berupa list positional (0..n-1) berisi string.
+     * Array asosiatif diubah berdasarkan urutan insertion, BUKAN nama.
+     * Jika ada kunci non-sequential, log & tolak (fail-closed).
+     */
     protected function normalizeRouteParams(array $params): array
     {
-        if (array_is_list($params)) {
-            return array_map(static fn ($v) => is_scalar($v) ? (string) $v : $v, $params);
+        if (! array_is_list($params)) {
+            log_message(
+                'warning',
+                'DynamicRouter: parameter route harus berupa list positional.'
+            );
+
+            $this->rejectAsNotFound(
+                'route_params',
+                'INVALID_ROUTE_PARAMETERS',
+                [
+                    'keys' => array_keys($params),
+                ]
+            );
         }
 
-        // Bukan list: ambil nilai sesuai urutan, tapi catat warning.
-        log_message('debug', 'DynamicRouter: parameter route bukan list, dinormalisasi posisional.');
+        foreach ($params as $index => $value) {
+            if (! is_scalar($value)) {
+                $this->rejectAsNotFound(
+                    'route_params',
+                    'INVALID_ROUTE_PARAMETER_TYPE',
+                    [
+                        'index' => $index,
+                        'type'  => get_debug_type($value),
+                    ]
+                );
+            }
 
-        return array_values(array_map(
-            static fn ($v) => is_scalar($v) ? (string) $v : $v,
-            $params
-        ));
+            $params[$index] = (string) $value;
+        }
+
+        return $params;
     }
 
 
@@ -549,21 +569,35 @@ abstract class DynamicRouterBase extends Controller
 
     protected function logRejection(string $stage, string $reason, array $context = []): void
     {
-        $bucket = 'dr_log_' . md5($this->request->getIPAddress() . '|' . $stage . '|' . $reason);
-        $key    = $this->safeCacheKey($bucket);
+        // Sanitasi context: hanya scalar, tanpa newline
+        $context = array_map(
+            static fn ($v) => is_scalar($v) ? str_replace(["\r", "\n"], ' ', (string)$v) : '[non-scalar]',
+            $context
+        );
 
-        if (cache($key) !== null) {
-            return; // sudah dicatat dalam jendela ini
+        // Batasi ukuran context
+        if (strlen(json_encode($context)) > 2048) {
+            $context = ['_truncated' => true];
         }
 
-        cache()->save($key, 1, 60); // 1 menit
+        $ip = $this->request->getIPAddress() ?: 'unknown';
+        $bucket = 'dr_log_' . hash('xxh128', $ip . '|' . $stage . '|' . $reason);
+        $key = $this->safeCacheKey($bucket);
+
+        // Increment atomik dengan TTL (CI4 cache mendukung increment)
+        $count = cache()->increment($key, 1, 60) ?? 1;
+
+        if ($count > 1) {
+            return; // sudah dicatat
+        }
 
         log_message('warning', 'DynamicRouter rejected: ' . json_encode([
             'stage'  => $stage,
             'reason' => $reason,
-            'ip'     => $this->request->getIPAddress(),
+            'ip'     => $ip,
         ] + $context));
     }
+
     /**
      * Catat lalu samarkan sebagai 404.
      *
@@ -904,36 +938,42 @@ abstract class DynamicRouterBase extends Controller
     }
 
     /** Parameter URL selalu string: tolak yang tidak bisa menjadi tipe skalar yang diminta (hindari TypeError 500). */
-    protected function paramsMatchSignature(ReflectionMethod $method, array $params): bool
-    {
-        foreach ($method->getParameters() as $i => $parameter) {
-            if (! array_key_exists($i, $params)) {
-                continue;
-            }
+    protected function paramsMatchSignature(
+        ReflectionMethod $method,
+        array $params
+    ): bool {
+        $parameters = $method->getParameters();
+        $parameterCount = count($parameters);
+        $argumentCount = count($params);
 
-            $value = $params[$i];
-            $type  = $parameter->getType();
+        $requiredCount = $method->getNumberOfRequiredParameters();
+        $hasVariadic = $method->isVariadic();
 
-            // Tanpa type declaration: tidak ada yang perlu divalidasi.
-            if ($type === null) {
-                continue;
-            }
+        // Jumlah argumen wajib harus terpenuhi.
+        if ($argumentCount < $requiredCount) {
+            return false;
+        }
 
-            // Parameter bertipe union: cukup salah satu tipe cocok.
-            if ($type instanceof \ReflectionUnionType) {
-                $ok = false;
+        // Argumen berlebih hanya boleh jika method variadic.
+        if (! $hasVariadic && $argumentCount > $parameterCount) {
+            return false;
+        }
 
-                foreach ($type->getTypes() as $unionType) {
-                    if ($this->matchesBuiltinType($unionType, $value)) {
-                        $ok = true;
-                        break;
-                    }
-                }
+        foreach ($params as $index => $value) {
+            $parameter = $parameters[$index] ?? null;
 
-                if (! $ok) {
+            // Parameter tambahan hanya sah untuk variadic.
+            if ($parameter === null) {
+                if (! $hasVariadic) {
                     return false;
                 }
 
+                $parameter = $parameters[$parameterCount - 1];
+            }
+
+            $type = $parameter->getType();
+
+            if ($type === null) {
                 continue;
             }
 
@@ -946,48 +986,76 @@ abstract class DynamicRouterBase extends Controller
     }
 
     /**
-     * Cocokkan satu nilai dengan satu ReflectionType.
-     * Tipe non-builtin (class/interface) dianggap cocok karena
-     * route parameter selalu string dan akan di-resolve oleh controller.
+     * Route parameter berasal dari URL dan secara normal berupa string.
+     * Jangan menganggap object, callable, iterable, atau class type
+     * otomatis cocok dengan string.
      */
-    private function matchesBuiltinType(\ReflectionType $type, mixed $value): bool
-    {
+    private function matchesBuiltinType(
+        \ReflectionType $type,
+        mixed $value
+    ): bool {
         if ($type instanceof \ReflectionUnionType) {
-            foreach ($type->getTypes() as $t) {
-                if ($this->matchesBuiltinType($t, $value)) {
+            foreach ($type->getTypes() as $unionType) {
+                if ($this->matchesBuiltinType($unionType, $value)) {
                     return true;
                 }
             }
+
+            return false;
+        }
+
+        // Intersection type tidak dapat dipenuhi oleh string URL.
+        if ($type instanceof \ReflectionIntersectionType) {
             return false;
         }
 
         if (! $type instanceof \ReflectionNamedType) {
-            return true; // intersection type: serahkan ke controller
+            return false;
         }
 
         if (! $type->isBuiltin()) {
-            return true; // class/interface: route param string, biar controller resolve
+            // Class/interface harus di-resolve melalui dependency injection,
+            // bukan dipaksakan dari parameter URL.
+            return false;
         }
-
-        $name = $type->getName();
 
         if ($value === null) {
             return $type->allowsNull();
         }
 
-        // Route param selalu string; hanya terima string.
         if (! is_string($value)) {
             return false;
         }
 
-        return match ($name) {
+        return match ($type->getName()) {
             'string' => true,
-            'int'    => filter_var($value, FILTER_VALIDATE_INT) !== false
-                        && (string) filter_var($value, FILTER_VALIDATE_INT) === ltrim($value, '+'),
-            'float'  => filter_var($value, FILTER_VALIDATE_FLOAT) !== false,
-            'bool'   => in_array(strtolower($value), ['1', '0', 'true', 'false'], true),
-            'mixed'  => true,
-            default  => true, // iterable/object/callable: serahkan ke controller
+
+            'int' => filter_var(
+                $value,
+                FILTER_VALIDATE_INT
+            ) !== false,
+
+            'float' => filter_var(
+                $value,
+                FILTER_VALIDATE_FLOAT
+            ) !== false,
+
+            'bool' => in_array(
+                strtolower($value),
+                ['1', '0', 'true', 'false'],
+                true
+            ),
+
+            'mixed' => true,
+
+            // URL string tidak otomatis menjadi array/object/callable.
+            'array',
+            'object',
+            'callable',
+            'iterable',
+            'resource' => false,
+
+            default => false,
         };
     }
 
@@ -1034,8 +1102,16 @@ abstract class DynamicRouterBase extends Controller
         };
 
         $apiFallbackHandler = function (string $message, int $status, string $code) {
-            $requestId = $this->request->getHeaderLine('X-Request-ID')
-                ?: bin2hex(random_bytes(8));
+            $incomingRequestId = trim(
+                $this->request->getHeaderLine('X-Request-ID')
+            );
+
+            $requestId = preg_match(
+                '/^[A-Za-z0-9._-]{8,64}$/',
+                $incomingRequestId
+            ) === 1
+                ? $incomingRequestId
+                : bin2hex(random_bytes(16));
 
             $this->response->setHeader('X-Request-ID', $requestId);
 
