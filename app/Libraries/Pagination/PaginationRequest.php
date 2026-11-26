@@ -13,6 +13,7 @@ final class PaginationRequest
     private const DEFAULT_PER_PAGE = 10;
     private const MAX_PER_PAGE = 100;
 
+
     public function __construct(
         private readonly int $page = self::DEFAULT_PAGE,
         private readonly int $perPage = self::DEFAULT_PER_PAGE,
@@ -33,6 +34,14 @@ final class PaginationRequest
         if ($maxPerPage < 1) {
             throw DomainException::badRequest(
                 'Max per page minimal 1.'
+            );
+        }
+        $effectivePerPage = min($perPage, $maxPerPage);
+        $maxInt = PHP_INT_MAX;
+        // Pastikan perkalian offset tidak melampaui batas integer.
+        if (($page - 1) > intdiv($maxInt, $effectivePerPage)) {
+            throw DomainException::badRequest(
+                'Nomor halaman terlalu besar.'
             );
         }
     }
@@ -70,7 +79,9 @@ final class PaginationRequest
 
     public function offset(): int
     {
-        return ($this->page - 1) * $this->perPage();
+        $perPage = $this->perPage();
+
+        return ($this->page - 1) * $perPage;
     }
 
     public function limit(): int
