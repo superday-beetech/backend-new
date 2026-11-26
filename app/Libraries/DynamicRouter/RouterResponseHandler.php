@@ -17,7 +17,8 @@ class RouterResponseHandler
         private $fallbackHandler = null,
         private $apiFallbackHandler = null,
         private $uiFallbackHandler = null,
-    ) {}
+    ) {
+    }
 
     /**
      * Resolusi kode dan pesan error.
@@ -42,13 +43,17 @@ class RouterResponseHandler
             try {
                 $message = sprintf($message, ...$replaceArgs);
             } catch (\Throwable $e) {
-                log_message('warning', sprintf(
-                    'RouterResponseHandler: sprintf gagal untuk "%s": %s',
-                    $message,
-                    $e->getMessage()
-                ));
-                // Biarkan message asli (dengan placeholder)
-                $message = sprintf($message, ...$replaceArgs);
+                log_message(
+                    'warning',
+                    'RouterResponseHandler: format pesan gagal untuk "{message}": {error}',
+                    [
+                        'message' => $message,
+                        'error'   => $e->getMessage(),
+                    ]
+                );
+
+                // Jangan ulangi operasi yang sudah gagal.
+                // Kembalikan pesan asli agar error handler tidak memicu error kedua.
             }
         }
 
