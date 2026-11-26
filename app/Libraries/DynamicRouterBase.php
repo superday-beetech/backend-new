@@ -254,7 +254,7 @@ abstract class DynamicRouterBase extends Controller
         /*
          * 5. Security pipeline production.
          */
-        if (ENVIRONMENT === 'production') {
+        if (ENVIRONMENT === 'production' || ENVIRONMENT === 'development') {
 
             /*
              * 5.1 Controller allowlist.
@@ -443,7 +443,7 @@ abstract class DynamicRouterBase extends Controller
         /*
          * 7. After route hooks.
          */
-        if (ENVIRONMENT === 'production') {
+       if (ENVIRONMENT === 'production' || ENVIRONMENT === 'development') {
             foreach ($this->afterRouteHooks as $hook) {
                 $this->assertHookCallable(
                     $hook,
