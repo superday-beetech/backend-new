@@ -251,14 +251,15 @@ $routes->get('health', 'HealthController::index');
 // $routes->get('erp', 'ErpSpaController::index');
 // $routes->get('erp/(:any)', 'ErpSpaController::index/$1');
 $routes->get('vite', 'Vite::index');
-$routes->get('acn', 'ErpSpaController::index', ['filter' => 'rbac']);
-$routes->get('acn/login', 'ErpSpaController::index', ['filter' => 'rbac']);
-$routes->get('acn/(:any)', 'ErpSpaController::index', ['filter' => 'rbac']);
+$routes->get('acn', 'ErpSpaController::index');
+$routes->get('acn/login', 'ErpSpaController::index');
+$routes->get('acn/(:any)', 'ErpSpaController::index');
 $routes->get('api/v1/erp/navigation', 'ErpApiController::index', ['filter' => 'rbac']);
 $routes->get('api/v1/erp/settings', 'ErpApiController::settings', ['filter' => 'rbac']);
 $routes->post('api/v1/erp/settings', 'ErpApiController::settings', ['filter' => 'rbac']);
 $routes->get('uploads/products/(:segment)', 'FileController::productImage/$1');
 $routes->get('uploads/products/temp/(:segment)', 'FileController::tempImage/$1', ['filter' => 'rbac']);
+$routes->get('problems/(:segment)', 'Problems::show/$1');
 
 // Webhook (payment gateway / marketplace): wajib validasi signature di filter.
 $routes->group(

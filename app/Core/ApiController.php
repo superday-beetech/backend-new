@@ -41,10 +41,21 @@ class ApiController extends ResourceController
         $userId = (int) auth()->id();
 
         if ($userId < 1) {
-            return $this->jsonError(
+            return $this->apiFail(
                 ApiErrorCode::UNAUTHENTICATED,
                 'User tidak terautentikasi.'
             );
+        }
+
+        return $userId;
+    }
+
+    protected function requireUserId(): int
+    {
+        $userId = (int) auth()->id();
+
+        if ($userId < 1) {
+            throw DomainException::unauthorized('User tidak terautentikasi.');
         }
 
         return $userId;
@@ -92,7 +103,7 @@ class ApiController extends ResourceController
             $extraMeta
         );
 
-        return $this->jsonSuccess(
+        return $this->apiOk(
             data: $items,
             message: $message,
             status: $status,
@@ -101,9 +112,14 @@ class ApiController extends ResourceController
     }
 
     /**
-     * Response sukses standar REST API.
-     */
-    protected function jsonSuccess(
+    * Response sukses standar REST API.
+    *
+    * @param mixed  $data    Payload utama (array/objek/null).
+    * @param string $message Pesan manusiawi.
+    * @param int    $status  HTTP status (default 200).
+    * @param array  $meta    Metadata tambahan (pagination, dsb).
+    */
+    protected function apiOk(
         mixed $data = null,
         string $message = 'Success',
         int $status = 200,
@@ -125,94 +141,57 @@ class ApiController extends ResourceController
     }
 
     /**
-     * Response error standar REST API.
-     */
-    protected function jsonError(
+ * Response error standar REST API (RFC 9457 Problem Details).
+ *
+ * Pemakaian:
+ *   $this->apiFail(ApiErrorCode::INTERNAL_SERVER_ERROR, 'Gagal memuat pengaturan.');
+ *   $this->apiFail(ApiErrorCode::INVALID_ID, 'ID tidak valid.', instance: '/organizations/abc123');
+ *   $this->apiFail(
+ *       ApiErrorCode::VALIDATION_ERROR,
+ *       'Validasi gagal.',
+ *       extensions: ['errors' => $errors]
+ *   );
+ */
+    protected function apiFail(
         ApiErrorCode|string $code,
-        string $message,
-        ?int $status = null,
-        mixed $errors = null
+        string $detail,
+        string|int|null $instanceOrStatus = null,   // fleksibel: instance (string) atau status (int)
+        array $extensions = [],
+        ?int $statusOverride = null
     ): ResponseInterface {
-        $errorCode = $code instanceof ApiErrorCode ? $code->value : $code;
-        $httpStatus = $status ?? (
-            $code instanceof ApiErrorCode ? $code->defaultHttpStatus() : 400
-        );
+        // 1. Resolusi kode: enum atau string → enum
+        $resolvedCode = $code instanceof ApiErrorCode
+            ? $code
+            : (ApiErrorCode::tryFrom($code) ?? ApiErrorCode::DOMAIN_ERROR);
 
+        // 2. Resolusi instance vs status (kompatibilitas posisi ke-3 lama)
+        $instance = null;
+
+        if (is_string($instanceOrStatus)) {
+            $instance = $instanceOrStatus;
+        } elseif (is_int($instanceOrStatus) && $statusOverride === null) {
+            // Call-site lama: apiFail('CODE', 'pesan', 401)
+            $statusOverride = $instanceOrStatus;
+        }
+
+        $status = $statusOverride ?? $resolvedCode->defaultHttpStatus();
+
+        // 3. Payload RFC 9457
         $payload = [
-            'error'   => true,
-            'code'    => $errorCode,
-            'message' => $message,
-            'data'    => null,
+            'type'   => $resolvedCode->typeUri(),
+            'title'  => $resolvedCode->defaultTitle(),
+            'status' => $status,
+            'detail' => $detail,
         ];
 
-        if ($errors !== null && $errors !== []) {
-            $payload['errors'] = $errors;
+        if ($instance !== null) {
+            $payload['instance'] = $instance;
         }
 
         return $this->response
-            ->setStatusCode($httpStatus)
-            ->setJSON($payload);
-    }
-
-    /**
-     * Kompatibilitas pemanggilan lama successResponse().
-     * Meneruskan langsung ke jsonSuccess() agar output JSON tetap seragam.
-     */
-    protected function successResponse(
-        mixed $data = null,
-        string $message = 'Success',
-        int $code = 200,
-        array $meta = []
-    ): ResponseInterface {
-        return $this->jsonSuccess(
-            data: $data,
-            message: $message,
-            status: $code,
-            meta: $meta
-        );
-    }
-
-    /**
-     * Kompatibilitas pemanggilan lama errorResponse().
-     * Memetakan HTTP status ke ApiErrorCode dan meneruskan ke jsonError().
-     */
-    protected function errorResponse(
-        string|array $message = 'Error',
-        int $code = 400,
-        mixed $errors = null,
-        ApiErrorCode|string|null $errorCode = null
-    ): ResponseInterface {
-        if (is_array($message)) {
-            $errors  = $errors ?? $message;
-            $message = 'Validasi gagal.';
-        }
-
-        $resolvedCode = $errorCode ?? match ($code) {
-            400     => ApiErrorCode::BAD_REQUEST,
-            401     => ApiErrorCode::UNAUTHENTICATED,
-            403     => ApiErrorCode::FORBIDDEN,
-            404     => ApiErrorCode::NOT_FOUND,
-            405     => ApiErrorCode::METHOD_NOT_ALLOWED,
-            409     => ApiErrorCode::CONFLICT,
-            410     => ApiErrorCode::GONE,
-            413     => ApiErrorCode::PAYLOAD_TOO_LARGE,
-            415     => ApiErrorCode::UNSUPPORTED_MEDIA_TYPE,
-            422     => ApiErrorCode::VALIDATION_ERROR,
-            429     => ApiErrorCode::TOO_MANY_REQUESTS,
-            502     => ApiErrorCode::BAD_GATEWAY,
-            503     => ApiErrorCode::SERVICE_UNAVAILABLE,
-            504     => ApiErrorCode::GATEWAY_TIMEOUT,
-            default => $code >= 500
-                ? ApiErrorCode::INTERNAL_SERVER_ERROR
-                : ApiErrorCode::DOMAIN_ERROR,
-        };
-
-        return $this->jsonError(
-            code: $resolvedCode,
-            message: $message,
-            status: $code,
-            errors: $errors
-        );
+            ->setStatusCode($status)
+            ->setContentType('application/problem+json')
+            ->setJSON(array_merge($payload, $extensions));
     }
 
     /**
@@ -272,6 +251,7 @@ class ApiController extends ResourceController
         return $data !== [] ? $data : null;
     }
 
+
     /**
      * Penanganan exception terpusat.
      */
@@ -281,17 +261,19 @@ class ApiController extends ResourceController
     ): ResponseInterface {
         // 1. Exception aturan bisnis / domain aplikasi.
         if ($e instanceof DomainException) {
-            return $this->jsonError(
-                $e->getErrorCode(),
-                $e->getMessage(),
-                status: $e->getStatusCode(),
-                errors: $e->getErrors()
+            $errors = $e->getErrors();
+
+            return $this->apiFail(
+                code: $e->getErrorCode(),
+                detail: $e->getMessage(),
+                extensions: $errors !== [] ? ['errors' => $errors] : [],
+                statusOverride: $e->getStatusCode()
             );
         }
 
         // 2. Exception validasi CodeIgniter & PHP global.
         if ($e instanceof \InvalidArgumentException) {
-            return $this->jsonError(
+            return $this->apiFail(
                 ApiErrorCode::VALIDATION_ERROR,
                 $e->getMessage()
             );
@@ -305,7 +287,7 @@ class ApiController extends ResourceController
                 ['message' => $e->getMessage()]
             );
 
-            return $this->jsonError(
+            return $this->apiFail(
                 ApiErrorCode::DATABASE_ERROR,
                 $fallback
             );
@@ -317,7 +299,7 @@ class ApiController extends ResourceController
             '[API ERROR] ' . $e::class . ': ' . $e->getMessage()
         );
 
-        return $this->jsonError(
+        return $this->apiFail(
             ApiErrorCode::INTERNAL_SERVER_ERROR,
             $fallback
         );

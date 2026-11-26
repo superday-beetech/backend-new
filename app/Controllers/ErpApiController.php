@@ -151,7 +151,7 @@ class ErpApiController extends ApiController
         $key = $this->request->getGet('key');
 
         if (!$key || !preg_match('/^App\.[a-zA-Z0-9_]+$/', $key)) {
-            return $this->errorResponse('Invalid setting key.');
+            return $this->apiFail('Invalid setting key.');
         }
 
         [$className, $property] = explode('.', $key, 2);
