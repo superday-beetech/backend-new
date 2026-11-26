@@ -39,19 +39,13 @@ class AccessChecker
         $endpoint = trim($endpoint);
 
         if ($endpoint === '') {
+            log_message('warning', 'AccessChecker: endpoint kosong pada diagnoseAccess().');
+
             return $this->decision(
                 false,
                 'invalid_endpoint',
                 'Endpoint yang diminta tidak valid.',
                 404
-            );
-            log_message(
-                'error',
-                'Gagal memeriksa route registry. Endpoint: {endpoint}; Error: {error}',
-                [
-                    'endpoint' => $endpoint,
-                    'error' => $e->getMessage(),
-                ]
             );
         }
 
@@ -66,7 +60,7 @@ class AccessChecker
                 'Gagal memeriksa route registry. Endpoint: {endpoint}; Error: {error}',
                 [
                     'endpoint' => $endpoint,
-                    'error' => $e->getMessage(),
+                    'error'    => $e->getMessage(),
                 ]
             );
 
@@ -226,20 +220,25 @@ class AccessChecker
         }
 
         // 8. Bypass group hanya melewati grant permission.
-        // Tidak melewati status akun, route, atau HTTP verb.
-        /* if ($isBypassGroup) {
-            // Batasi bypass ke GET/HEAD (read-only) untuk mengurangi risiko.
-            if (! in_array($httpVerb, ['GET', 'HEAD'], true)) {
+        if ($isBypassGroup) {
+            if (! in_array($httpVerb, ['GET', 'POST', 'HEAD'], true)) {
                 log_message('info', "AccessChecker: bypass group diblokir untuk {$httpVerb} {$endpoint}");
-                // Lanjut ke pengecekan permission normal
             } else {
                 return $this->decision(true, 'bypass_group', 'Akses diizinkan.', 200);
             }
-        } */
+        }
 
         if ($isBypassGroup) {
+            // Bypass hanya melewati pemeriksaan permission.
+            // Route Registry, status route, HTTP verb, autentikasi,
+            // dan status akun sudah diperiksa sebelum blok ini.
 
-            return $this->decision(true, 'bypass_group', 'Akses diizinkan.', 200);
+            return $this->decision(
+                true,
+                'bypass_group',
+                'Akses diizinkan.',
+                200
+            );
         }
 
         // 9. Permission override.
