@@ -3,12 +3,19 @@
 namespace Config;
 
 use App\Libraries\SettingLibrary;
+use App\Libraries\Uploader;
+use App\Repositories\StorageFileRepository;
+use App\Repositories\StorageRelationRepository;
 use App\Services\AccessControlService;
 use App\Services\RouteRegistryAccessService;
 use CodeIgniter\Config\BaseService;
-use Modules\Core\Services\Storage\FileHandler;
-use Modules\Core\Services\Storage\ImageHandler;
-use Modules\Core\Services\Storage\StorageFacade;
+use App\Services\Storage\FileHandler;
+use App\Services\Storage\ImageHandler;
+use App\Services\Storage\StorageFacade;
+use App\Services\Storage\StorageManager;
+use App\Services\Storage\StorageMetadataService;
+use App\Services\Storage\StorageService;
+use App\Services\Storage\StorageValidationService;
 
 /**
  * Services Configuration file.
@@ -68,7 +75,7 @@ class Services extends BaseService
         return new AccessControlService();
     }
 
-    public static function storage(bool $getShared = true): StorageFacade
+    /* public static function storage(bool $getShared = true): StorageFacade
     {
         if ($getShared) {
             return static::getSharedInstance('storage');
@@ -94,5 +101,64 @@ class Services extends BaseService
         }
 
         return new ImageHandler();
+    } */
+
+    public static function storageManager(bool $getShared = true): StorageManager
+    {
+        if ($getShared) {
+            return static::getSharedInstance('storageManager');
+        }
+
+        return new StorageManager(env('storage.defaultDriver', 'local'));
+    }
+
+    public static function storageService(bool $getShared = true): StorageService
+    {
+        if ($getShared) {
+            return static::getSharedInstance('storageService');
+        }
+
+        return new StorageService(
+            static::storageManager(),
+            new StorageValidationService()
+        );
+    }
+
+    /** Dipakai oleh FileHandler, ImageHandler, dan service('storage') di mana pun. */
+    public static function storage(bool $getShared = true): StorageFacade
+    {
+        if ($getShared) {
+            return static::getSharedInstance('storage');
+        }
+
+        $files = new StorageFileRepository();
+
+        return new StorageFacade(
+            new StorageMetadataService(static::storageService(), $files),
+            static::storageService(),
+            new StorageRelationRepository(),
+            $files
+        );
+    }
+
+    public static function fileHandler(bool $getShared = true): FileHandler
+    {
+        return $getShared
+            ? static::getSharedInstance('fileHandler')
+            : new FileHandler(static::storage());
+    }
+
+    public static function imageHandler(bool $getShared = true): ImageHandler
+    {
+        return $getShared
+            ? static::getSharedInstance('imageHandler')
+            : new ImageHandler(static::storage());
+    }
+
+    public static function uploader(bool $getShared = true): Uploader
+    {
+        return $getShared
+            ? static::getSharedInstance('uploader')
+            : new Uploader();
     }
 }
