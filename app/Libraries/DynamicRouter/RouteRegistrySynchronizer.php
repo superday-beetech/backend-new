@@ -24,8 +24,34 @@ final class RouteRegistrySynchronizer
             $scan  = ['controllerClasses' => [], 'discoveredMethods' => []];
             $dupes = [];
 
-            foreach (["Modules\\{$module}\\Controllers", "Modules\\{$module}\\Controllers\\API\\V1"] as $namespace) {
-                $part = (new ControllerScanner($module, $namespace, false))->scanWithoutCache();
+            foreach ([
+                "Modules\\{$module}\\Controllers",
+                "Modules\\{$module}\\Controllers\\API\\V1",
+            ] as $namespace) {
+                $scanner = new ControllerScanner(
+                    $module,
+                    $namespace,
+                    false
+                );
+
+                $scanResult = $scanner->scanDetailed();
+
+                if (! $scanResult['complete']) {
+                    log_message(
+                        'error',
+                        'RouteRegistrySynchronizer: scan modul {module} gagal pada {namespace}. Sinkronisasi dibatalkan.',
+                        [
+                            'module'    => $module,
+                            'namespace' => $namespace,
+                        ]
+                    );
+
+                    // Jangan masukkan modul ini ke hasil scan.
+                    // Dengan begitu, route lama tidak ditandai missing.
+                    continue 2;
+                }
+
+                $part = $scanResult['data'];
 
                 foreach ($part['controllerClasses'] as $short => $class) {
                     if (isset($scan['controllerClasses'][$short])) {
@@ -45,7 +71,7 @@ final class RouteRegistrySynchronizer
                 unset($scan['controllerClasses'][$short]);
                 $scan['discoveredMethods'] = array_values(array_filter(
                     $scan['discoveredMethods'],
-                    static fn(string $e): bool => ! str_starts_with($e, $short . '::')
+                    static fn (string $e): bool => ! str_starts_with($e, $short . '::')
                 ));
             }
 
