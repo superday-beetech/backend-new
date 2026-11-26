@@ -442,11 +442,110 @@ class ControllerScanner
 
     private function getCacheKey(): string
     {
-        return 'dynamic_router_scan_' . md5(
-            $this->moduleFolder
-                . '|' . $this->moduleNamespace
-                . '|' . ENVIRONMENT
+        $folder = rtrim(
+            ROOTPATH . 'modules' . DIRECTORY_SEPARATOR . $this->moduleFolder
+                . DIRECTORY_SEPARATOR . 'Controllers',
+            '/\\'
         );
+
+        $fingerprint = [];
+
+        if (is_dir($folder)) {
+            $iterator = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator(
+                    $folder,
+                    FilesystemIterator::SKIP_DOTS
+                )
+            );
+
+            foreach ($iterator as $file) {
+                if (
+                    ! $file->isFile()
+                    || strtolower($file->getExtension()) !== 'php'
+                ) {
+                    continue;
+                }
+
+                $realPath = $file->getRealPath();
+
+                if (
+                    $realPath === false
+                    || ! str_starts_with(
+                        $realPath,
+                        $folder . DIRECTORY_SEPARATOR
+                    )
+                ) {
+                    continue;
+                }
+
+                $fingerprint[] = [
+                    'path'  => str_replace(
+                        '\\',
+                        '/',
+                        substr($realPath, strlen($folder) + 1)
+                    ),
+                    'mtime' => $file->getMTime(),
+                    'size'  => $file->getSize(),
+                ];
+            }
+        }
+
+        usort(
+            $fingerprint,
+            static fn (array $a, array $b): int =>
+                strcmp($a['path'], $b['path'])
+        );
+
+        $fingerprintHash = hash(
+            'sha256',
+            json_encode(
+                $fingerprint,
+                JSON_THROW_ON_ERROR
+            )
+        );
+
+        return 'dynamic_router_scan_' . hash(
+            'sha256',
+            implode('|', [
+                $this->moduleFolder,
+                $this->moduleNamespace,
+                ENVIRONMENT,
+                $fingerprintHash,
+            ])
+        );
+    }
+
+    public function scanDetailed(): array
+    {
+        try {
+            $result = $this->scanDirectory();
+
+            return [
+                'complete' => true,
+                'data'     => $result,
+                'errors'   => [],
+            ];
+        } catch (Throwable $e) {
+            log_message(
+                'error',
+                'ControllerScanner gagal: {module}; {error}',
+                [
+                    'module' => $this->moduleFolder,
+                    'error'  => $e->getMessage(),
+                ]
+            );
+
+            return [
+                'complete' => false,
+                'data'     => [
+                    'allowedControllers' => [],
+                    'discoveredMethods'  => [],
+                    'controllerClasses'  => [],
+                    'methodCount'        => [],
+                ],
+                'errors' => [$e->getMessage()],
+            ];
+        }
     }
 
     private function isCacheEnabled(): bool
