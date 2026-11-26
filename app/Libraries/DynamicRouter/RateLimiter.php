@@ -6,6 +6,7 @@ namespace App\Libraries\DynamicRouter;
 
 use CodeIgniter\Cache\CacheInterface;
 use CodeIgniter\HTTP\RequestInterface;
+use Modules\Core\Exceptions\DomainException;
 use Throwable;
 
 /**
@@ -45,7 +46,8 @@ class RateLimiter
         private array $rateLimits = [],
         private ?AuthenticationResolver $authenticationResolver = null,
         private ?CacheInterface $cache = null,
-    ) {}
+    ) {
+    }
 
     public function checkRateLimit(string $endpoint): bool
     {
@@ -126,12 +128,8 @@ class RateLimiter
             return $value;
         }
 
-        // Backend tanpa increment yang andal (mis. file cache): fallback baca-tulis.
-        // Bukan atomik, tapi minimal tetap menghitung. Gunakan Redis di production.
-        $current = (int) ($cache->get($key) ?? 0);
-        $new     = $current + 1;
-        $cache->save($key, $new, $ttl);
-
-        return $new;
+        throw DomainException::notFound(
+            'Cache backend tidak menyediakan increment atomik.'
+        );
     }
 }
