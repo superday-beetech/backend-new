@@ -18,37 +18,114 @@ class MethodPolicy
         private string $module = '',
     ) {
         $this->buildIndex();
-
-        $this->allowedLookup = array_fill_keys(
-            $allowedMethods,
-            true
-        );
+        $this->buildAllowedLookup();
     }
 
     private function buildIndex(): void
     {
         foreach ($this->discoveredMethods as $endpoint) {
+            if (! is_string($endpoint)) {
+                log_message(
+                    'warning',
+                    'MethodPolicy: discovered endpoint bukan string.'
+                );
+
+                continue;
+            }
+
             $parts = explode('::', $endpoint, 2);
 
             if (count($parts) !== 2) {
+                log_message(
+                    'warning',
+                    'MethodPolicy: format endpoint tidak valid: {endpoint}',
+                    ['endpoint' => $endpoint]
+                );
+
                 continue;
             }
 
             [$controller, $method] = $parts;
 
-            $key = strtolower($method);
-
             if (
-                isset($this->index[$controller][$key])
-                && $this->index[$controller][$key] !== $method
+                ! preg_match('/^[A-Za-z][A-Za-z0-9_]*$/', $controller)
+                || ! preg_match('/^[A-Za-z][A-Za-z0-9_]*$/', $method)
             ) {
                 log_message(
                     'warning',
-                    "MethodPolicy: duplikat case-insensitive '{$controller}::{$method}'"
+                    'MethodPolicy: nama controller/method tidak valid: {endpoint}',
+                    ['endpoint' => $endpoint]
                 );
+
+                continue;
+            }
+
+            $key = strtolower($method);
+
+            if (isset($this->index[$controller][$key])) {
+                $existing = $this->index[$controller][$key];
+
+                if ($existing !== $method) {
+                    log_message(
+                        'critical',
+                        'MethodPolicy: konflik nama method case-insensitive pada {controller}: {first} dan {second}',
+                        [
+                            'controller' => $controller,
+                            'first'      => $existing,
+                            'second'     => $method,
+                        ]
+                    );
+
+                    // Konflik harus fail-closed, jangan pilih salah satunya.
+                    unset($this->index[$controller][$key]);
+
+                    continue;
+                }
             }
 
             $this->index[$controller][$key] = $method;
+        }
+    }
+
+    /**
+     * Normalisasi allowlist agar pencocokan endpoint tidak sensitif
+     * terhadap kapitalisasi nama method.
+     *
+     * Format yang diterima: Controller::method
+     */
+    private function buildAllowedLookup(): void
+    {
+        $this->allowedLookup = [];
+
+        foreach ($this->allowedMethods as $endpoint) {
+            if (! is_string($endpoint)) {
+                log_message(
+                    'warning',
+                    'MethodPolicy: allowedMethods berisi nilai bukan string.'
+                );
+
+                continue;
+            }
+
+            $endpoint = trim($endpoint);
+
+            if (! preg_match(
+                '/^([A-Za-z][A-Za-z0-9_]*)::([A-Za-z][A-Za-z0-9_]*)$/',
+                $endpoint,
+                $matches
+            )) {
+                log_message(
+                    'warning',
+                    'MethodPolicy: format allowlist tidak valid: {endpoint}',
+                    ['endpoint' => $endpoint]
+                );
+
+                continue;
+            }
+
+            $canonical = strtolower($matches[1] . '::' . $matches[2]);
+
+            $this->allowedLookup[$canonical] = true;
         }
     }
 
@@ -169,7 +246,7 @@ class MethodPolicy
          * 1. Static allowlist.
          */
         if ($this->allowedMethods !== []) {
-            if (! isset($this->allowedLookup[$endpoint])) {
+            if (! isset($this->allowedLookup[strtolower($endpoint)])) {
                 return [
                     'allowed' => false,
                     'reason' => 'METHOD_NOT_ALLOWLISTED',
