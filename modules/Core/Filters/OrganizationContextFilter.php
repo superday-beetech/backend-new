@@ -10,64 +10,68 @@ use CodeIgniter\HTTP\IncomingRequest;
 use CodeIgniter\HTTP\RequestInterface;
 use CodeIgniter\HTTP\ResponseInterface;
 use Config\AuthPolicy;
-use Modules\Core\Services\OrganizationContextService;
 use Throwable;
 
 final class OrganizationContextFilter implements FilterInterface
 {
     /**
-     * Endpoint yang memang harus dapat diakses
-     * sebelum organisasi aktif dipilih.
+     * Modul yang tidak membutuhkan organisasi aktif untuk bootstrap,
+     * autentikasi, atau pengelolaan sesi.
+     */
+    private const CONTEXT_FREE_MODULES = [
+        'auth',
+    ];
+
+    /**
+     * Endpoint Core yang harus tetap bisa dipanggil sebelum konteks
+     * organisasi dipilih atau ketika pengguna sedang menggantinya.
      */
     private const CONTEXT_FREE_ENDPOINTS = [
+        'organization-context',
+        'organization-context/index',
         'organization-context/index-context',
         'organization-context/index-available',
         'organization-context/switch-organization',
         'organization-context/clear-context',
+        'organizations',
+        'organizations/index',
         'organizations/create-organization',
     ];
 
     public function before(RequestInterface $request, $arguments = null)
     {
         if (! $request instanceof IncomingRequest) {
-            return is_cli()
-                ? null
-                : service('response')->setStatusCode(400);
+            return is_cli() ? null : $this->deny(
+                'ORGANIZATION_CONTEXT_BAD_REQUEST',
+                'Request tidak dapat diproses.',
+                400
+            );
         }
 
         $path = strtolower(trim((string) $request->getPath(), '/'));
-
-        // Filter ini hanya ditujukan untuk API.
         $apiPrefix = trim(config(AuthPolicy::class)->apiPrefix, '/');
 
         if (
-            $path !== $apiPrefix
-            && ! str_starts_with($path, $apiPrefix . '/')
+            $apiPrefix === ''
+            || ($path !== $apiPrefix && ! str_starts_with($path, $apiPrefix . '/'))
         ) {
             return null;
         }
 
-        /*
-         * Hilangkan prefix API dan versi.
-         * Contoh:
-         * api/v1/core/organization/context
-         * menjadi:
-         * core/organization/context
-         */
         $segments = explode('/', $path);
 
+        // Hanya API versi yang dikenali: /api/v1/{module}/...
         if (
-            count($segments) < 4
+            count($segments) < 3
             || $segments[0] !== $apiPrefix
-            || preg_match('/^v\d+$/', $segments[1]) !== 1
+            || preg_match('/^v[0-9]+$/', $segments[1]) !== 1
         ) {
             return null;
         }
 
         $module = $segments[2];
 
-        // Filter ini hanya mengamankan API modul Core.
-        if ($module !== 'core') {
+        if (in_array($module, self::CONTEXT_FREE_MODULES, true)) {
             return null;
         }
 
@@ -88,14 +92,12 @@ final class OrganizationContextFilter implements FilterInterface
             if ($user === null || (int) $user->id <= 0) {
                 return $this->deny(
                     'ORGANIZATION_AUTH_REQUIRED',
-                    'Autentikasi diperlukan untuk mengakses konteks organisasi.',
+                    'Autentikasi diperlukan untuk mengakses layanan organisasi.',
                     401
                 );
             }
 
-            $contextService = new OrganizationContextService();
-
-            $context = $contextService->getCurrentContext(
+            $context = service('organizationContext')->getCurrentContext(
                 (int) $user->id
             );
 
@@ -131,7 +133,6 @@ final class OrganizationContextFilter implements FilterInterface
         ResponseInterface $response,
         $arguments = null
     ): void {
-        // Tidak ada proses setelah request.
     }
 
     private function deny(
