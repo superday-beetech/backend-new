@@ -41,7 +41,7 @@ class OrganizationUnitsController extends ApiController
         );
 
         if ($organizationId === null) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'VALIDATION_ERROR',
                 'Organization ID wajib diisi.',
                 422
@@ -49,7 +49,7 @@ class OrganizationUnitsController extends ApiController
         }
 
         if (! $this->hasPermission('core.organization_units.view')) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'FORBIDDEN',
                 'Tidak memiliki izin melihat unit organisasi.',
                 403
@@ -69,7 +69,7 @@ class OrganizationUnitsController extends ApiController
                 $includeInactive
             );
 
-            return $this->jsonSuccess(
+            return $this->apiOk(
                 $units,
                 'Daftar unit organisasi berhasil diambil.'
             );
@@ -109,7 +109,7 @@ class OrganizationUnitsController extends ApiController
         );
 
         if ($organizationId === null || $unitId === null) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'VALIDATION_ERROR',
                 'Organization ID dan Unit ID wajib valid.',
                 422
@@ -117,7 +117,7 @@ class OrganizationUnitsController extends ApiController
         }
 
         if (! $this->hasPermission('core.organization_units.view')) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'FORBIDDEN',
                 'Tidak memiliki izin melihat unit organisasi.',
                 403
@@ -135,14 +135,14 @@ class OrganizationUnitsController extends ApiController
             );
 
             if ($unit === null) {
-                return $this->jsonError(
+                return $this->apiFail(
                     'UNIT_NOT_FOUND',
                     'Unit organisasi tidak ditemukan.',
                     404
                 );
             }
 
-            return $this->jsonSuccess(
+            return $this->apiOk(
                 $unit,
                 'Detail unit organisasi berhasil diambil.'
             );
@@ -166,7 +166,7 @@ class OrganizationUnitsController extends ApiController
         }
 
         if ($id <= 0) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'VALIDATION_ERROR',
                 'Organization ID tidak valid.',
                 422
@@ -174,7 +174,7 @@ class OrganizationUnitsController extends ApiController
         }
 
         if (! $this->hasPermission('core.organization_units.create')) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'FORBIDDEN',
                 'Tidak memiliki izin membuat unit organisasi.',
                 403
@@ -188,7 +188,7 @@ class OrganizationUnitsController extends ApiController
         $input = $this->getRequestData();
 
         if (! is_array($input) || $input === []) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'INVALID_PAYLOAD',
                 'Body request harus berupa objek JSON.',
                 400
@@ -204,7 +204,7 @@ class OrganizationUnitsController extends ApiController
 
             $unit = $this->organizationService->findUnit($id, $unitId);
 
-            return $this->jsonSuccess(
+            return $this->apiOk(
                 $unit,
                 'Unit organisasi berhasil dibuat.',
                 201
@@ -236,7 +236,7 @@ class OrganizationUnitsController extends ApiController
         $input = $this->getRequestData();
 
         if (! is_array($input) || $input === []) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'INVALID_PAYLOAD',
                 'Body request tidak valid.',
                 400
@@ -252,7 +252,7 @@ class OrganizationUnitsController extends ApiController
         );
 
         if ($organizationId === null || $resolvedUnitId === null) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'VALIDATION_ERROR',
                 'Organization ID dan Unit ID wajib valid.',
                 422
@@ -260,7 +260,7 @@ class OrganizationUnitsController extends ApiController
         }
 
         if (! $this->hasPermission('core.organization_units.update')) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'FORBIDDEN',
                 'Tidak memiliki izin mengubah unit organisasi.',
                 403
@@ -280,14 +280,14 @@ class OrganizationUnitsController extends ApiController
             );
 
             if (! $updated) {
-                return $this->jsonError(
+                return $this->apiFail(
                     'UPDATE_FAILED',
                     'Unit organisasi gagal diperbarui.',
                     500
                 );
             }
 
-            return $this->jsonSuccess(
+            return $this->apiOk(
                 $this->organizationService->findUnit(
                     $organizationId,
                     $resolvedUnitId
@@ -316,7 +316,7 @@ class OrganizationUnitsController extends ApiController
         }
 
         if ($id <= 0 || $unitId <= 0) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'VALIDATION_ERROR',
                 'Organization ID dan Unit ID tidak valid.',
                 422
@@ -324,7 +324,7 @@ class OrganizationUnitsController extends ApiController
         }
 
         if (! $this->hasPermission('core.organization_units.delete')) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'FORBIDDEN',
                 'Tidak memiliki izin menonaktifkan unit organisasi.',
                 403
@@ -343,14 +343,14 @@ class OrganizationUnitsController extends ApiController
             );
 
             if (! $deleted) {
-                return $this->jsonError(
+                return $this->apiFail(
                     'DEACTIVATE_FAILED',
                     'Unit organisasi gagal dinonaktifkan.',
                     500
                 );
             }
 
-            return $this->jsonSuccess(
+            return $this->apiOk(
                 [
                     'id' => $unitId,
                     'organization_id' => $id,
@@ -380,7 +380,7 @@ class OrganizationUnitsController extends ApiController
                 $context === null
                 || empty($context['organization']['id'])
             ) {
-                return $this->jsonError(
+                return $this->apiFail(
                     'ORGANIZATION_CONTEXT_REQUIRED',
                     'Pilih organisasi aktif terlebih dahulu.',
                     409
@@ -390,7 +390,7 @@ class OrganizationUnitsController extends ApiController
             if (
                 (int) $context['organization']['id'] !== $organizationId
             ) {
-                return $this->jsonError(
+                return $this->apiFail(
                     'ORGANIZATION_CONTEXT_MISMATCH',
                     'Organisasi request tidak sesuai dengan organisasi aktif.',
                     409
@@ -405,7 +405,7 @@ class OrganizationUnitsController extends ApiController
                 ['message' => $e->getMessage()]
             );
 
-            return $this->jsonError(
+            return $this->apiFail(
                 'ORGANIZATION_CONTEXT_UNAVAILABLE',
                 'Konteks organisasi tidak dapat divalidasi.',
                 503
@@ -441,7 +441,7 @@ class OrganizationUnitsController extends ApiController
             $message = strtolower($e->getMessage());
 
             if (str_contains($message, 'tidak ditemukan')) {
-                return $this->jsonError(
+                return $this->apiFail(
                     'NOT_FOUND',
                     $e->getMessage(),
                     404
@@ -452,14 +452,14 @@ class OrganizationUnitsController extends ApiController
                 str_contains($message, 'tidak memiliki kewenangan')
                 || str_contains($message, 'akses organisasi')
             ) {
-                return $this->jsonError(
+                return $this->apiFail(
                     'FORBIDDEN',
                     $e->getMessage(),
                     403
                 );
             }
 
-            return $this->jsonError(
+            return $this->apiFail(
                 'VALIDATION_ERROR',
                 $e->getMessage(),
                 422

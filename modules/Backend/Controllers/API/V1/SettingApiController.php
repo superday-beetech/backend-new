@@ -251,7 +251,7 @@ class SettingApiController extends ApiController
                 ];
             }
 
-            return $this->successResponse([
+            return $this->apiOk([
                 'groups' => array_values($groups),
                 'label' => 'Pengaturan Aplikasi',
             ], 'Pengaturan berhasil dimuat.');
@@ -261,7 +261,7 @@ class SettingApiController extends ApiController
                 '[Backend Settings][getIndex] ' . $e->getMessage()
             );
 
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Gagal memuat pengaturan aplikasi.',
                 500
             );
@@ -315,7 +315,7 @@ class SettingApiController extends ApiController
             $value = $this->parseValue($rawValue, $type);
 
             if (! empty($this->settingsConfig()->database['deferWrites'])) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Tambah class memerlukan deferWrites=false.',
                     409
                 );
@@ -360,7 +360,7 @@ class SettingApiController extends ApiController
 
             $transactionStarted = false;
 
-            return $this->successResponse([
+            return $this->apiOk([
                 'class' => $databaseClass,
                 'property' => $property,
                 'context' => $context,
@@ -370,7 +370,7 @@ class SettingApiController extends ApiController
                 $db->transRollback();
             }
 
-            return $this->errorResponse($e->getMessage(), 422);
+            return $this->apiFail($e->getMessage(), 422);
         } catch (Throwable $e) {
             if ($transactionStarted && $db !== null) {
                 $db->transRollback();
@@ -381,7 +381,7 @@ class SettingApiController extends ApiController
                 '[Backend Settings][addClass] ' . $e->getMessage()
             );
 
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Class baru gagal disimpan. Periksa konfigurasi dan log aplikasi.',
                 500
             );
@@ -426,7 +426,7 @@ class SettingApiController extends ApiController
             $groupName = $this->displayGroup($databaseClass);
 
             if (! empty($this->settingsConfig()->database['deferWrites'])) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Bulk save memerlukan deferWrites=false.',
                     409
                 );
@@ -582,7 +582,7 @@ class SettingApiController extends ApiController
 
             $transactionStarted = false;
 
-            return $this->successResponse([
+            return $this->apiOk([
                 'group' => $databaseClass,
                 'context' => $context,
                 'saved' => count($values),
@@ -593,7 +593,7 @@ class SettingApiController extends ApiController
                 $db->transRollback();
             }
 
-            return $this->errorResponse($e->getMessage(), 422);
+            return $this->apiFail($e->getMessage(), 422);
         } catch (Throwable $e) {
             if ($transactionStarted && $db !== null) {
                 $db->transRollback();
@@ -604,7 +604,7 @@ class SettingApiController extends ApiController
                 '[Backend Settings][bulkSave] ' . $e->getMessage()
             );
 
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Pengaturan gagal disimpan. Periksa log aplikasi.',
                 500
             );
@@ -672,7 +672,7 @@ class SettingApiController extends ApiController
 
             $transactionStarted = false;
 
-            return $this->successResponse([
+            return $this->apiOk([
                 'group' => $databaseClass,
                 'property' => $property,
                 'context' => $context,
@@ -682,7 +682,7 @@ class SettingApiController extends ApiController
                 $db->transRollback();
             }
 
-            return $this->errorResponse($e->getMessage(), 422);
+            return $this->apiFail($e->getMessage(), 422);
         } catch (Throwable $e) {
             if ($transactionStarted && $db !== null) {
                 $db->transRollback();
@@ -693,7 +693,7 @@ class SettingApiController extends ApiController
                 '[Backend Settings][delete] ' . $e->getMessage()
             );
 
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Pengaturan gagal dihapus.',
                 500
             );

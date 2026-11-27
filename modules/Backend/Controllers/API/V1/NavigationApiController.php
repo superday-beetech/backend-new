@@ -46,7 +46,7 @@ class NavigationApiController extends ApiController
         $section  = (string) ($this->request->getGet('section') ?? 'backend');
 
         if (! in_array($position, self::POSITIONS, true) || ! in_array($section, self::SECTIONS, true)) {
-            return $this->errorResponse('Posisi atau section navigasi tidak valid.', 422);
+            return $this->apiFail('Posisi atau section navigasi tidak valid.', 422);
         }
 
         try {
@@ -66,14 +66,14 @@ class NavigationApiController extends ApiController
                 'roles'    => $roles,
             ];
 
-            return $this->successResponse(
+            return $this->apiOk(
                 ['data' => $data],
                 'Navigasi berhasil dimuat.'
             );
         } catch (Throwable $e) {
             log_message('error', '[Navigation API][index] ' . $e->getMessage());
 
-            return $this->errorResponse('Gagal memuat data navigasi.', 500);
+            return $this->apiFail('Gagal memuat data navigasi.', 500);
         }
     }
 
@@ -162,7 +162,7 @@ class NavigationApiController extends ApiController
 
                 if (! $existingMenu) {
                     $db->transRollback();
-                    return $this->errorResponse('Menu tidak ditemukan.', 404);
+                    return $this->apiFail('Menu tidak ditemukan.', 404);
                 }
 
                 if (
@@ -291,12 +291,12 @@ class NavigationApiController extends ApiController
         $menuId = filter_var($id, FILTER_VALIDATE_INT);
 
         if ($menuId === false || (int) $menuId < 1) {
-            return $this->errorResponse('ID menu tidak valid.', 422);
+            return $this->apiFail('ID menu tidak valid.', 422);
         }
 
         $menu = $this->menuModel->find((int) $menuId);
         if (! $menu) {
-            return $this->errorResponse('Menu tidak ditemukan.', 404);
+            return $this->apiFail('Menu tidak ditemukan.', 404);
         }
 
         $db = Database::connect();
@@ -305,7 +305,7 @@ class NavigationApiController extends ApiController
             ->countAllResults();
 
         if ($hasChildren > 0) {
-            return $this->errorResponse('Menu masih memiliki submenu. Pindahkan atau hapus submenu terlebih dahulu.', 409);
+            return $this->apiFail('Menu masih memiliki submenu. Pindahkan atau hapus submenu terlebih dahulu.', 409);
         }
 
         $db->transBegin();
@@ -441,7 +441,7 @@ class NavigationApiController extends ApiController
         $user = auth()->user();
 
         if (! $user) {
-            return $this->errorResponse('Sesi pengguna tidak ditemukan.', 401);
+            return $this->apiFail('Sesi pengguna tidak ditemukan.', 401);
         }
 
         $groups = method_exists($user, 'getGroups')
@@ -453,7 +453,7 @@ class NavigationApiController extends ApiController
             'frontend'
         );
 
-        return $this->successResponse(
+        return $this->apiOk(
             ['menus' => $menus],
             'Navigasi berhasil dimuat.'
         );

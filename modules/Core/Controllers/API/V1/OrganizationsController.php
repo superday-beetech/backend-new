@@ -37,7 +37,7 @@ class OrganizationsController extends ApiController
         $userId = $this->currentUserId();
 
         if ($userId === null) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'UNAUTHENTICATED',
                 'Autentikasi diperlukan.',
                 401
@@ -102,7 +102,7 @@ class OrganizationsController extends ApiController
                 ->get()
                 ->getResultArray();
 
-            return $this->successResponse([
+            return $this->apiOk([
                 'items' => $data,
                 'pagination' => Pagination::make(
                     $pagination,
@@ -127,7 +127,7 @@ class OrganizationsController extends ApiController
         $userId = $this->currentUserId();
 
         if ($userId === null) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'UNAUTHENTICATED',
                 'Autentikasi diperlukan.',
                 401
@@ -135,7 +135,7 @@ class OrganizationsController extends ApiController
         }
 
         if ($id < 1) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'INVALID_ID',
                 'ID organisasi tidak valid.',
                 400
@@ -149,14 +149,14 @@ class OrganizationsController extends ApiController
             );
 
             if ($membership === null) {
-                return $this->jsonError(
+                return $this->apiFail(
                     'ORGANIZATION_NOT_FOUND',
                     'Organisasi tidak ditemukan atau akses tidak tersedia.',
                     404
                 );
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $membership,
                 'Detail organisasi berhasil diambil.'
             );
@@ -165,7 +165,7 @@ class OrganizationsController extends ApiController
                 'message' => $e->getMessage(),
             ]);
 
-            return $this->jsonError(
+            return $this->apiFail(
                 'INTERNAL_ERROR',
                 'Gagal mengambil detail organisasi.',
                 500
@@ -181,7 +181,7 @@ class OrganizationsController extends ApiController
         $userId = $this->currentUserId();
 
         if ($userId === null) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'UNAUTHENTICATED',
                 'Autentikasi diperlukan.',
                 401
@@ -189,7 +189,7 @@ class OrganizationsController extends ApiController
         }
 
         if (! $this->hasPermission('core.organizations.create')) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'FORBIDDEN',
                 'Tidak memiliki izin membuat organisasi.',
                 403
@@ -199,7 +199,7 @@ class OrganizationsController extends ApiController
         $input = $this->request->getJSON(true);
 
         if (! is_array($input)) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'INVALID_PAYLOAD',
                 'Body request harus berupa objek JSON.',
                 400
@@ -238,7 +238,7 @@ class OrganizationsController extends ApiController
         ]);
 
         if (! $validation->run($data)) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'VALIDATION_ERROR',
                 'Data organisasi tidak valid.',
                 422,
@@ -254,7 +254,7 @@ class OrganizationsController extends ApiController
 
             $organization = $this->organizations->find($organizationId);
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $organization,
                 'Organisasi berhasil dibuat.',
                 201
@@ -265,14 +265,14 @@ class OrganizationsController extends ApiController
             ]);
 
             if (method_exists($e, 'getCode') && $e->getCode() === 1062) {
-                return $this->jsonError(
+                return $this->apiFail(
                     'DUPLICATE_ORGANIZATION',
                     'Kode atau slug organisasi sudah digunakan.',
                     409
                 );
             }
 
-            return $this->jsonError(
+            return $this->apiFail(
                 'INTERNAL_ERROR',
                 'Gagal membuat organisasi.',
                 500
@@ -289,7 +289,7 @@ class OrganizationsController extends ApiController
         $userId = $this->currentUserId();
 
         if ($userId === null) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'UNAUTHENTICATED',
                 'Autentikasi diperlukan.',
                 401
@@ -297,7 +297,7 @@ class OrganizationsController extends ApiController
         }
 
         if ($id < 1) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'INVALID_ID',
                 'ID organisasi tidak valid.',
                 400
@@ -306,7 +306,7 @@ class OrganizationsController extends ApiController
 
         // Permission RBAC sistem.
         /* if (! $this->hasPermission('core.organizations.update')) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'FORBIDDEN',
                 'Tidak memiliki izin mengubah organisasi.',
                 403
@@ -320,7 +320,7 @@ class OrganizationsController extends ApiController
         );
 
         if ($membership === null) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'ORGANIZATION_NOT_FOUND',
                 'Organisasi tidak ditemukan atau akses tidak tersedia.',
                 404
@@ -329,7 +329,7 @@ class OrganizationsController extends ApiController
 
         // Permission organisasi: owner atau admin.
         if (! $this->organizationService->userCanManage($userId, $id)) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'FORBIDDEN',
                 'Hanya owner atau admin yang dapat mengubah organisasi.',
                 403
@@ -339,7 +339,7 @@ class OrganizationsController extends ApiController
         $input = $this->request->getJSON(true);
 
         if (! is_array($input) || $input === []) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'INVALID_PAYLOAD',
                 'Body request tidak valid.',
                 400
@@ -360,7 +360,7 @@ class OrganizationsController extends ApiController
         );
 
         if ($data === []) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'NO_UPDATABLE_FIELDS',
                 'Tidak ada field yang dapat diubah.',
                 422
@@ -373,7 +373,7 @@ class OrganizationsController extends ApiController
             }
 
             if (! is_string($value)) {
-                return $this->jsonError(
+                return $this->apiFail(
                     'VALIDATION_ERROR',
                     'Format field tidak valid.',
                     422,
@@ -399,7 +399,7 @@ class OrganizationsController extends ApiController
         ]);
 
         if (! $validation->run($data)) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'VALIDATION_ERROR',
                 'Data organisasi tidak valid.',
                 422,
@@ -415,19 +415,19 @@ class OrganizationsController extends ApiController
             );
 
             if (! $updated) {
-                return $this->jsonError(
+                return $this->apiFail(
                     'UPDATE_FAILED',
                     'Organisasi gagal diperbarui.',
                     500
                 );
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->organizationService->findForUser($userId, $id),
                 'Organisasi berhasil diperbarui.'
             );
         } catch (\RuntimeException $e) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'UPDATE_REJECTED',
                 $e->getMessage(),
                 422
@@ -437,7 +437,7 @@ class OrganizationsController extends ApiController
                 'message' => $e->getMessage(),
             ]);
 
-            return $this->jsonError(
+            return $this->apiFail(
                 'INTERNAL_ERROR',
                 'Gagal memperbarui organisasi.',
                 500
@@ -456,7 +456,7 @@ class OrganizationsController extends ApiController
         $userId = $this->currentUserId();
 
         if ($userId === null) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'UNAUTHENTICATED',
                 'Autentikasi diperlukan.',
                 401
@@ -464,14 +464,14 @@ class OrganizationsController extends ApiController
         }
 
         if (! $this->organizationService->userCanManage($userId, $id)) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'FORBIDDEN',
                 'Hanya owner atau admin yang dapat mengarsipkan organisasi.',
                 403
             );
         }
         if ($this->organizationService->findForUser($userId, $id) === null) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'ORGANIZATION_NOT_FOUND',
                 'Organisasi tidak ditemukan atau akses tidak tersedia.',
                 404
@@ -480,14 +480,14 @@ class OrganizationsController extends ApiController
 
         try {
             if (! $this->organizations->delete($id)) {
-                return $this->jsonError(
+                return $this->apiFail(
                     'DELETE_FAILED',
                     'Organisasi gagal dihapus.',
                     500
                 );
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 ['id' => $id],
                 'Organisasi berhasil diarsipkan.'
             );
@@ -496,7 +496,7 @@ class OrganizationsController extends ApiController
                 'message' => $e->getMessage(),
             ]);
 
-            return $this->jsonError(
+            return $this->apiFail(
                 'INTERNAL_ERROR',
                 'Gagal mengarsipkan organisasi.',
                 500
@@ -513,21 +513,21 @@ class OrganizationsController extends ApiController
         $userId = $this->currentUserId();
 
         if ($userId === null) {
-            return $this->jsonError('UNAUTHENTICATED', 'Autentikasi diperlukan.', 401);
+            return $this->apiFail('UNAUTHENTICATED', 'Autentikasi diperlukan.', 401);
         }
 
         if (! $this->hasPermission('core.organization_units.view')) {
-            return $this->jsonError('FORBIDDEN', 'Tidak memiliki izin melihat unit organisasi.', 403);
+            return $this->apiFail('FORBIDDEN', 'Tidak memiliki izin melihat unit organisasi.', 403);
         }
 
         if (! $this->organizationService->userCanAccess($userId, $id)) {
-            return $this->jsonError('ORGANIZATION_NOT_FOUND', 'Organisasi tidak ditemukan atau akses tidak tersedia.', 404);
+            return $this->apiFail('ORGANIZATION_NOT_FOUND', 'Organisasi tidak ditemukan atau akses tidak tersedia.', 404);
         }
 
         try {
             $includeInactive = $this->request->getGet('include_inactive') === '1';
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->organizationService->listUnits(
                     $userId,
                     $id,
@@ -540,7 +540,7 @@ class OrganizationsController extends ApiController
                 'message' => $e->getMessage(),
             ]);
 
-            return $this->jsonError('INTERNAL_ERROR', 'Gagal mengambil unit organisasi.', 500);
+            return $this->apiFail('INTERNAL_ERROR', 'Gagal mengambil unit organisasi.', 500);
         }
     }
 
@@ -555,24 +555,24 @@ class OrganizationsController extends ApiController
         $organizationId = (int) ($data['organization_id'] ?? 0);
         $unitId = (int) ($data['unit_id'] ?? 0);
         if ($userId === null) {
-            return $this->jsonError('UNAUTHENTICATED', 'Autentikasi diperlukan.', 401);
+            return $this->apiFail('UNAUTHENTICATED', 'Autentikasi diperlukan.', 401);
         }
 
         if (! $this->hasPermission('core.organization_units.view')) {
-            return $this->jsonError('FORBIDDEN', 'Tidak memiliki izin melihat unit organisasi.', 403);
+            return $this->apiFail('FORBIDDEN', 'Tidak memiliki izin melihat unit organisasi.', 403);
         }
 
         if (! $this->organizationService->userCanAccess($userId, $organizationId)) {
-            return $this->jsonError('ORGANIZATION_NOT_FOUND', 'Organisasi tidak ditemukan atau akses tidak tersedia.', 404);
+            return $this->apiFail('ORGANIZATION_NOT_FOUND', 'Organisasi tidak ditemukan atau akses tidak tersedia.', 404);
         }
 
         $unit = $this->organizationService->findUnit($organizationId, $unitId);
 
         if ($unit === null) {
-            return $this->jsonError('UNIT_NOT_FOUND', 'Unit organisasi tidak ditemukan.', 404);
+            return $this->apiFail('UNIT_NOT_FOUND', 'Unit organisasi tidak ditemukan.', 404);
         }
 
-        return $this->successResponse($unit, 'Detail unit organisasi berhasil diambil.');
+        return $this->apiOk($unit, 'Detail unit organisasi berhasil diambil.');
     }
 
     /**
@@ -583,21 +583,21 @@ class OrganizationsController extends ApiController
         $userId = $this->currentUserId();
 
         if ($userId === null) {
-            return $this->jsonError('UNAUTHENTICATED', 'Autentikasi diperlukan.', 401);
+            return $this->apiFail('UNAUTHENTICATED', 'Autentikasi diperlukan.', 401);
         }
 
         if (! $this->hasPermission('core.organization_units.create')) {
-            return $this->jsonError('FORBIDDEN', 'Tidak memiliki izin membuat unit organisasi.', 403);
+            return $this->apiFail('FORBIDDEN', 'Tidak memiliki izin membuat unit organisasi.', 403);
         }
 
         if (! $this->organizationService->userCanAccess($userId, $id)) {
-            return $this->jsonError('ORGANIZATION_NOT_FOUND', 'Organisasi tidak ditemukan atau akses tidak tersedia.', 404);
+            return $this->apiFail('ORGANIZATION_NOT_FOUND', 'Organisasi tidak ditemukan atau akses tidak tersedia.', 404);
         }
 
         $input = $this->request->getJSON(true);
 
         if (! is_array($input) || $input === []) {
-            return $this->jsonError('INVALID_PAYLOAD', 'Body request harus berupa objek JSON.', 400);
+            return $this->apiFail('INVALID_PAYLOAD', 'Body request harus berupa objek JSON.', 400);
         }
 
         try {
@@ -607,19 +607,19 @@ class OrganizationsController extends ApiController
                 $input
             );
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->organizationService->findUnit($id, $unitId),
                 'Unit organisasi berhasil dibuat.',
                 201
             );
         } catch (RuntimeException $e) {
-            return $this->jsonError('UNIT_CREATE_REJECTED', $e->getMessage(), 422);
+            return $this->apiFail('UNIT_CREATE_REJECTED', $e->getMessage(), 422);
         } catch (Throwable $e) {
             log_message('error', '[Organization:createUnit] {message}', [
                 'message' => $e->getMessage(),
             ]);
 
-            return $this->jsonError('INTERNAL_ERROR', 'Gagal membuat unit organisasi.', 500);
+            return $this->apiFail('INTERNAL_ERROR', 'Gagal membuat unit organisasi.', 500);
         }
     }
 
@@ -631,21 +631,21 @@ class OrganizationsController extends ApiController
         $userId = $this->currentUserId();
 
         if ($userId === null) {
-            return $this->jsonError('UNAUTHENTICATED', 'Autentikasi diperlukan.', 401);
+            return $this->apiFail('UNAUTHENTICATED', 'Autentikasi diperlukan.', 401);
         }
 
         if (! $this->hasPermission('core.organization_units.update')) {
-            return $this->jsonError('FORBIDDEN', 'Tidak memiliki izin mengubah unit organisasi.', 403);
+            return $this->apiFail('FORBIDDEN', 'Tidak memiliki izin mengubah unit organisasi.', 403);
         }
 
         if (! $this->organizationService->userCanAccess($userId, $id)) {
-            return $this->jsonError('ORGANIZATION_NOT_FOUND', 'Organisasi tidak ditemukan atau akses tidak tersedia.', 404);
+            return $this->apiFail('ORGANIZATION_NOT_FOUND', 'Organisasi tidak ditemukan atau akses tidak tersedia.', 404);
         }
 
         $input = $this->request->getJSON(true);
 
         if (! is_array($input) || $input === []) {
-            return $this->jsonError('INVALID_PAYLOAD', 'Body request tidak valid.', 400);
+            return $this->apiFail('INVALID_PAYLOAD', 'Body request tidak valid.', 400);
         }
 
         try {
@@ -657,21 +657,21 @@ class OrganizationsController extends ApiController
             );
 
             if (! $updated) {
-                return $this->jsonError('UPDATE_FAILED', 'Unit organisasi gagal diperbarui.', 500);
+                return $this->apiFail('UPDATE_FAILED', 'Unit organisasi gagal diperbarui.', 500);
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->organizationService->findUnit($id, $unitId),
                 'Unit organisasi berhasil diperbarui.'
             );
         } catch (RuntimeException $e) {
-            return $this->jsonError('UNIT_UPDATE_REJECTED', $e->getMessage(), 422);
+            return $this->apiFail('UNIT_UPDATE_REJECTED', $e->getMessage(), 422);
         } catch (Throwable $e) {
             log_message('error', '[Organization:updateUnit] {message}', [
                 'message' => $e->getMessage(),
             ]);
 
-            return $this->jsonError('INTERNAL_ERROR', 'Gagal memperbarui unit organisasi.', 500);
+            return $this->apiFail('INTERNAL_ERROR', 'Gagal memperbarui unit organisasi.', 500);
         }
     }
 
@@ -683,15 +683,15 @@ class OrganizationsController extends ApiController
         $userId = $this->currentUserId();
 
         if ($userId === null) {
-            return $this->jsonError('UNAUTHENTICATED', 'Autentikasi diperlukan.', 401);
+            return $this->apiFail('UNAUTHENTICATED', 'Autentikasi diperlukan.', 401);
         }
 
         if (! $this->hasPermission('core.organization_units.delete')) {
-            return $this->jsonError('FORBIDDEN', 'Tidak memiliki izin menonaktifkan unit organisasi.', 403);
+            return $this->apiFail('FORBIDDEN', 'Tidak memiliki izin menonaktifkan unit organisasi.', 403);
         }
 
         if (! $this->organizationService->userCanAccess($userId, $id)) {
-            return $this->jsonError('ORGANIZATION_NOT_FOUND', 'Organisasi tidak ditemukan atau akses tidak tersedia.', 404);
+            return $this->apiFail('ORGANIZATION_NOT_FOUND', 'Organisasi tidak ditemukan atau akses tidak tersedia.', 404);
         }
 
         try {
@@ -702,21 +702,21 @@ class OrganizationsController extends ApiController
             );
 
             if (! $deleted) {
-                return $this->jsonError('DEACTIVATE_FAILED', 'Unit organisasi gagal dinonaktifkan.', 500);
+                return $this->apiFail('DEACTIVATE_FAILED', 'Unit organisasi gagal dinonaktifkan.', 500);
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 ['id' => $unitId, 'status' => 'inactive'],
                 'Unit organisasi berhasil dinonaktifkan.'
             );
         } catch (RuntimeException $e) {
-            return $this->jsonError('UNIT_DEACTIVATE_REJECTED', $e->getMessage(), 422);
+            return $this->apiFail('UNIT_DEACTIVATE_REJECTED', $e->getMessage(), 422);
         } catch (Throwable $e) {
             log_message('error', '[Organization:deleteUnit] {message}', [
                 'message' => $e->getMessage(),
             ]);
 
-            return $this->jsonError('INTERNAL_ERROR', 'Gagal menonaktifkan unit organisasi.', 500);
+            return $this->apiFail('INTERNAL_ERROR', 'Gagal menonaktifkan unit organisasi.', 500);
         }
     }
 
