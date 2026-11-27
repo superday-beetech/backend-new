@@ -344,7 +344,7 @@
     </script>
 
     <script type="module"
-        src="<?= esc('http://127.0.0.1:5173/acn/src/main.ts') ?>">
+        src="<?= esc('http://127.0.0.1:5173/acn/src/app/main.ts') ?>">
     </script>
 </body>
 
