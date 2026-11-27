@@ -57,7 +57,7 @@ class ErpSpaController extends BaseController
             );
         }
 
-        $entry = $manifest['src/main.ts'] ?? null;
+        $entry = $manifest['src/app/main.ts'] ?? null;
 
         if (
             ! is_array($entry)
