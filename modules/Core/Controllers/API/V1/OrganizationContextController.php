@@ -35,7 +35,7 @@ class OrganizationContextController extends ApiController
         $userId = $this->authenticatedUserId();
 
         if ($userId === 0) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'UNAUTHENTICATED',
                 'Sesi pengguna tidak ditemukan.',
                 401
@@ -45,7 +45,7 @@ class OrganizationContextController extends ApiController
         try {
             $context = $this->contextService->getCurrentContext($userId);
 
-            return $this->jsonSuccess(
+            return $this->apiOk(
                 $context,
                 $context === null
                     ? 'Belum ada organisasi aktif.'
@@ -54,7 +54,7 @@ class OrganizationContextController extends ApiController
         } catch (Throwable $e) {
             log_message('error', '[Organization Context] ' . $e->getMessage());
 
-            return $this->jsonError(
+            return $this->apiFail(
                 'CONTEXT_LOAD_FAILED',
                 'Gagal memuat konteks organisasi.',
                 500
@@ -72,7 +72,7 @@ class OrganizationContextController extends ApiController
         $userId = $this->authenticatedUserId();
 
         if ($userId === 0) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'UNAUTHENTICATED',
                 'Sesi pengguna tidak ditemukan.',
                 401
@@ -83,14 +83,14 @@ class OrganizationContextController extends ApiController
             $organizations = $this->contextService
                 ->getAvailableOrganizations($userId);
 
-            return $this->jsonSuccess(
+            return $this->apiOk(
                 $organizations,
                 'Daftar organisasi berhasil dimuat.'
             );
         } catch (Throwable $e) {
             log_message('error', '[Organization Available] ' . $e->getMessage());
 
-            return $this->jsonError(
+            return $this->apiFail(
                 'ORGANIZATION_LIST_FAILED',
                 'Gagal memuat daftar organisasi.',
                 500
@@ -111,7 +111,7 @@ class OrganizationContextController extends ApiController
         $userId = $this->authenticatedUserId();
 
         if ($userId === 0) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'UNAUTHENTICATED',
                 'Sesi pengguna tidak ditemukan.',
                 401
@@ -131,7 +131,7 @@ class OrganizationContextController extends ApiController
                 && ctype_digit($organizationId)
             )
         ) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'VALIDATION_ERROR',
                 'Organization ID harus berupa integer positif.',
                 422
@@ -141,7 +141,7 @@ class OrganizationContextController extends ApiController
         $organizationId = (int) $organizationId;
 
         if ($organizationId <= 0) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'VALIDATION_ERROR',
                 'Organization ID tidak valid.',
                 422
@@ -157,7 +157,7 @@ class OrganizationContextController extends ApiController
                     && ctype_digit($unitId)
                 )
             ) {
-                return $this->jsonError(
+                return $this->apiFail(
                     'VALIDATION_ERROR',
                     'Unit ID harus berupa integer positif.',
                     422
@@ -167,7 +167,7 @@ class OrganizationContextController extends ApiController
             $unitId = (int) $unitId;
 
             if ($unitId <= 0) {
-                return $this->jsonError(
+                return $this->apiFail(
                     'VALIDATION_ERROR',
                     'Unit ID tidak valid.',
                     422
@@ -182,12 +182,12 @@ class OrganizationContextController extends ApiController
                 $unitId
             );
 
-            return $this->jsonSuccess(
+            return $this->apiOk(
                 $context,
                 'Organisasi dan unit aktif berhasil diganti.'
             );
         } catch (InvalidArgumentException $e) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'ORGANIZATION_ACCESS_DENIED',
                 $e->getMessage(),
                 403
@@ -198,7 +198,7 @@ class OrganizationContextController extends ApiController
                 '[Organization Switch] ' . $e->getMessage()
             );
 
-            return $this->jsonError(
+            return $this->apiFail(
                 'ORGANIZATION_SWITCH_FAILED',
                 'Gagal mengganti organisasi aktif.',
                 500
@@ -216,7 +216,7 @@ class OrganizationContextController extends ApiController
         $userId = $this->authenticatedUserId();
 
         if ($userId === 0) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'UNAUTHENTICATED',
                 'Sesi pengguna tidak ditemukan.',
                 401
@@ -226,14 +226,14 @@ class OrganizationContextController extends ApiController
         try {
             $this->contextService->clearContext();
 
-            return $this->jsonSuccess(
+            return $this->apiOk(
                 null,
                 'Konteks organisasi berhasil dihapus.'
             );
         } catch (Throwable $e) {
             log_message('error', '[Organization Clear Context] ' . $e->getMessage());
 
-            return $this->jsonError(
+            return $this->apiFail(
                 'CONTEXT_CLEAR_FAILED',
                 'Gagal menghapus konteks organisasi.',
                 500
