@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Modules\Auth\Controllers\API\V1;
 
 use App\Core\ApiController;
+use App\Enum\ApiErrorCode;
 use CodeIgniter\HTTP\ResponseInterface;
 use CodeIgniter\Shield\Authentication\Authenticators\Session;
 use CodeIgniter\Shield\Result;
@@ -28,33 +29,31 @@ class AuthController extends ApiController
     public function login(): ResponseInterface
     {
         if (auth()->loggedIn()) {
-            return $this->respond([
-                'status'  => 200,
-                'error'   => false,
-                'message' => 'Anda sudah login.',
-                'data'    => [
+            return $this->apiOk(
+                [
                     'authenticated' => true,
                     'mode'          => 'session',
                     'redirect'      => '/dashboard',
                 ],
-            ], 200);
+                'Anda sudah login.'
+            );
         }
 
         $data = $this->getRequestData();
 
         if ($data === null) {
-            return $this->errorResponse(
-                'Body request tidak valid atau kosong.',
-                400
+            return $this->apiFail(
+                ApiErrorCode::BAD_REQUEST,
+                'Body request tidak valid atau kosong.'
             );
         }
 
         $input = $this->extractLoginPayload($data);
 
         if (! $this->passesLoginValidation($input)) {
-            return $this->errorResponse(
-                'Username/Email dan Password wajib diisi.',
-                422
+            return $this->apiFail(
+                ApiErrorCode::VALIDATION_ERROR,
+                'Username/Email dan Password wajib diisi.'
             );
         }
 
@@ -64,9 +63,9 @@ class AuthController extends ApiController
         );
 
         if (! $result->isOK()) {
-            return $this->errorResponse(
-                'Username/Email atau Password tidak valid.',
-                401
+            return $this->apiFail(
+                ApiErrorCode::UNAUTHENTICATED,
+                'Username/Email atau Password tidak valid.'
             );
         }
 
@@ -74,7 +73,7 @@ class AuthController extends ApiController
             ? $result['user']
             : $result;
 
-        return $this->successResponse(
+        return $this->apiOk(
             ['user' => $userPayload],
             'Login berhasil.'
         );
@@ -87,10 +86,11 @@ class AuthController extends ApiController
         );
 
         if (! $this->passesLoginValidation($input)) {
-            return $this->errorResponse([
-                'message' => 'Terjadi Kesalahan pada input.',
-                'errors'  => $this->validator->getErrors(),
-            ], 422);
+            return $this->apiFail(
+                ApiErrorCode::VALIDATION_ERROR,
+                'Terjadi kesalahan pada input.',
+                extensions: ['errors' => $this->validator->getErrors()]
+            );
         }
 
         [$authenticator, $result] = $this->attemptLogin(
@@ -99,9 +99,9 @@ class AuthController extends ApiController
         );
 
         if (! $result->isOK()) {
-            return $this->errorResponse(
-                'Username/Email atau Password tidak valid.',
-                401
+            return $this->apiFail(
+                ApiErrorCode::UNAUTHENTICATED,
+                'Username/Email atau Password tidak valid.'
             );
         }
 
@@ -121,9 +121,9 @@ class AuthController extends ApiController
         $user = auth()->user();
 
         if (! $user) {
-            return $this->errorResponse(
-                'Session tidak ditemukan pada request API.',
-                401
+            return $this->apiFail(
+                ApiErrorCode::UNAUTHENTICATED,
+                'Session tidak ditemukan pada request API.'
             );
         }
 
@@ -136,7 +136,7 @@ class AuthController extends ApiController
         $profile['groups']         = $user->getGroups();
         $profile['identities']     = $user->identities;
 
-        return $this->successResponse(
+        return $this->apiOk(
             $profile,
             'Profil pengguna berhasil diambil.'
         );
@@ -146,7 +146,7 @@ class AuthController extends ApiController
     {
         auth()->logout();
 
-        return $this->successResponse(lang('Auth.successLogout'));
+        return $this->apiOk(null, lang('Auth.successLogout'));
     }
 
     private function extractLoginPayload(array $payload): array
