@@ -40,7 +40,7 @@ class OrganizationMembershipsController extends ApiController
         );
 
         if ($organizationId === null) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'VALIDATION_ERROR',
                 'Organization ID wajib diisi.',
                 422
@@ -64,7 +64,7 @@ class OrganizationMembershipsController extends ApiController
                 $status !== null ? (string) $status : null
             );
 
-            return $this->jsonSuccess(
+            return $this->apiOk(
                 $result,
                 'Data membership berhasil dimuat.'
             );
@@ -90,7 +90,7 @@ class OrganizationMembershipsController extends ApiController
         );
 
         if ($membershipId === null || $organizationId === null) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'VALIDATION_ERROR',
                 'Membership ID dan Organization ID wajib valid.',
                 422
@@ -108,14 +108,14 @@ class OrganizationMembershipsController extends ApiController
             );
 
             if ($membership === null) {
-                return $this->jsonError(
+                return $this->apiFail(
                     'NOT_FOUND',
                     'Membership tidak ditemukan.',
                     404
                 );
             }
 
-            return $this->jsonSuccess(
+            return $this->apiOk(
                 $membership,
                 'Detail membership berhasil dimuat.'
             );
@@ -138,7 +138,7 @@ class OrganizationMembershipsController extends ApiController
         $data = $this->getRequestData();
 
         if ($data === null) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'BAD_REQUEST',
                 'Body request tidak valid atau kosong.',
                 400
@@ -150,7 +150,7 @@ class OrganizationMembershipsController extends ApiController
         );
 
         if ($organizationId === null) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'VALIDATION_ERROR',
                 'Organization ID wajib diisi.',
                 422
@@ -172,7 +172,7 @@ class OrganizationMembershipsController extends ApiController
                 $membershipId
             );
 
-            return $this->jsonSuccess(
+            return $this->apiOk(
                 $membership,
                 'Membership berhasil dibuat.',
                 201
@@ -197,7 +197,7 @@ class OrganizationMembershipsController extends ApiController
         $data = $this->getRequestData();
 
         if ($membershipId === null) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'VALIDATION_ERROR',
                 'Membership ID tidak valid.',
                 422
@@ -205,7 +205,7 @@ class OrganizationMembershipsController extends ApiController
         }
 
         if ($data === null) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'BAD_REQUEST',
                 'Body request tidak valid atau kosong.',
                 400
@@ -217,7 +217,7 @@ class OrganizationMembershipsController extends ApiController
         );
 
         if ($organizationId === null) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'VALIDATION_ERROR',
                 'Organization ID wajib diisi.',
                 422
@@ -240,7 +240,7 @@ class OrganizationMembershipsController extends ApiController
                 $membershipId
             );
 
-            return $this->jsonSuccess(
+            return $this->apiOk(
                 $membership,
                 'Membership berhasil diperbarui.'
             );
@@ -266,7 +266,7 @@ class OrganizationMembershipsController extends ApiController
         );
 
         if ($membershipId === null || $organizationId === null) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'VALIDATION_ERROR',
                 'Membership ID dan Organization ID wajib valid.',
                 422
@@ -283,7 +283,7 @@ class OrganizationMembershipsController extends ApiController
                 $membershipId
             );
 
-            return $this->jsonSuccess(
+            return $this->apiOk(
                 ['id' => $membershipId],
                 'Membership berhasil dinonaktifkan.'
             );
@@ -317,7 +317,7 @@ class OrganizationMembershipsController extends ApiController
                 $search !== null ? (string) $search : null
             );
 
-            return $this->jsonSuccess(
+            return $this->apiOk(
                 $result,
                 'Daftar user berhasil dimuat.'
             );
@@ -342,7 +342,7 @@ class OrganizationMembershipsController extends ApiController
                 $context === null
                 || empty($context['organization']['id'])
             ) {
-                return $this->jsonError(
+                return $this->apiFail(
                     'ORGANIZATION_CONTEXT_REQUIRED',
                     'Pilih organisasi aktif terlebih dahulu.',
                     409
@@ -353,7 +353,7 @@ class OrganizationMembershipsController extends ApiController
                 $organizationId !== null
                 && (int) $context['organization']['id'] !== $organizationId
             ) {
-                return $this->jsonError(
+                return $this->apiFail(
                     'ORGANIZATION_CONTEXT_MISMATCH',
                     'Organisasi request tidak sesuai dengan organisasi aktif.',
                     409
@@ -368,7 +368,7 @@ class OrganizationMembershipsController extends ApiController
                 ['message' => $e->getMessage()]
             );
 
-            return $this->jsonError(
+            return $this->apiFail(
                 'ORGANIZATION_CONTEXT_UNAVAILABLE',
                 'Konteks organisasi tidak dapat divalidasi.',
                 503
@@ -383,7 +383,7 @@ class OrganizationMembershipsController extends ApiController
         Throwable $e
     ): ResponseInterface {
         if ($e instanceof InvalidArgumentException) {
-            return $this->jsonError(
+            return $this->apiFail(
                 'VALIDATION_ERROR',
                 $e->getMessage(),
                 422
@@ -397,14 +397,14 @@ class OrganizationMembershipsController extends ApiController
                 str_contains($message, 'tidak ditemukan')
                 || str_contains($message, 'tidak aktif')
             ) {
-                return $this->jsonError(
+                return $this->apiFail(
                     'NOT_FOUND',
                     $e->getMessage(),
                     404
                 );
             }
 
-            return $this->jsonError(
+            return $this->apiFail(
                 'BAD_REQUEST',
                 $e->getMessage(),
                 422
