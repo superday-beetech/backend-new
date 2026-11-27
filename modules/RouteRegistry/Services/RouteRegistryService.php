@@ -35,6 +35,11 @@ class RouteRegistryService
     private function invalidateAccessCache(): void
     {
         $this->routeRegistryAccess->clearCache();
+
+        // Route Registry dapat menyinkronkan permission Shield.
+        // Bersihkan cache otorisasi bersama agar perubahan permission
+        // tidak tertahan oleh cache instance selama request berjalan.
+        service('accessControl')->clearCache();
     }
 
     public function syncPermissions(array $items): array
