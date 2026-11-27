@@ -44,6 +44,16 @@ final class ApiAwareCsrfFilter implements FilterInterface
     public function after(RequestInterface $request, ResponseInterface $response, $arguments = null)
     {
         $this->csrf->after($request, $response, $arguments);
+
+        // Session-based CSRF does not provide a readable XSRF cookie.
+        // Return the current session token in a response header so the Vue
+        // client can keep it in memory and send it on the next unsafe request.
+        if ($request instanceof IncomingRequest && $this->isApiRequest($request)) {
+            $response->setHeader(
+                config(\Config\Security::class)->headerName,
+                csrf_hash()
+            );
+        }
     }
 
     private function isApiRequest(IncomingRequest $request): bool
