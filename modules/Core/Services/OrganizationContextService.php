@@ -4,22 +4,27 @@ declare(strict_types=1);
 
 namespace Modules\Core\Services;
 
+use CodeIgniter\Database\BaseConnection;
 use Config\Database;
 use InvalidArgumentException;
 
-class OrganizationContextService
+final class OrganizationContextService
 {
     private const SESSION_KEY = 'organization_context';
 
-    private $db;
+    private BaseConnection $db;
 
-    public function __construct()
+    public function __construct(?BaseConnection $db = null)
     {
-        $this->db = Database::connect();
+        $this->db = $db ?? Database::connect();
     }
 
     /**
-     * Daftar organisasi aktif dan seluruh unit yang dapat diakses user.
+     * Daftar organisasi aktif dan unit yang benar-benar terhubung
+     * dengan membership pengguna.
+     *
+     * Mendukung data lama yang masih menyimpan unit pada
+     * core_organization_memberships.unit_id.
      */
     public function getAvailableOrganizations(int $userId): array
     {
@@ -27,7 +32,7 @@ class OrganizationContextService
             return [];
         }
 
-        $rows = $this->db
+        $builder = $this->db
             ->table('core_organization_memberships m')
             ->select([
                 'm.id AS membership_id',
@@ -40,12 +45,18 @@ class OrganizationContextService
                 'o.organization_type',
                 'o.timezone',
                 'o.currency',
-                'mu.organization_unit_id AS unit_id',
-                'mu.is_default AS unit_is_default',
                 'ou.code AS unit_code',
                 'ou.name AS unit_name',
                 'ou.unit_type',
             ])
+            ->select(
+                'COALESCE(mu.organization_unit_id, m.unit_id) AS unit_id',
+                false
+            )
+            ->select(
+                'COALESCE(mu.is_default, CASE WHEN m.unit_id IS NULL THEN 0 ELSE 1 END) AS unit_is_default',
+                false
+            )
             ->join(
                 'core_organizations o',
                 'o.id = m.organization_id',
@@ -54,12 +65,12 @@ class OrganizationContextService
             ->join(
                 'core_organization_membership_units mu',
                 'mu.membership_id = m.id'
-                . ' AND mu.organization_id = m.organization_id',
+                    . ' AND mu.organization_id = m.organization_id',
                 'left'
             )
             ->join(
                 'core_organization_units ou',
-                'ou.id = mu.organization_unit_id'
+                'ou.id = COALESCE(mu.organization_unit_id, m.unit_id)'
                     . ' AND ou.organization_id = m.organization_id'
                     . ' AND ou.status = "active"'
                     . ' AND ou.deleted_at IS NULL',
@@ -71,17 +82,16 @@ class OrganizationContextService
             ->where('o.deleted_at', null)
             ->orderBy('m.is_default', 'DESC')
             ->orderBy('o.name', 'ASC')
-            ->orderBy('mu.is_default', 'DESC')
-            ->orderBy('ou.name', 'ASC')
-            ->get()
-            ->getResultArray();
+            ->orderBy('unit_is_default', 'DESC')
+            ->orderBy('ou.name', 'ASC');
 
+        $rows = $builder->get()->getResultArray();
         $organizations = [];
 
         foreach ($rows as $row) {
             $membershipId = (int) $row['membership_id'];
 
-            if (!isset($organizations[$membershipId])) {
+            if (! isset($organizations[$membershipId])) {
                 $organizations[$membershipId] = [
                     'membership_id' => $membershipId,
                     'organization_id' => (int) $row['organization_id'],
@@ -94,30 +104,47 @@ class OrganizationContextService
                     'timezone' => $row['timezone'],
                     'currency' => $row['currency'],
                     'units' => [],
-                    // Kompatibilitas respons lama.
+                    // Kompatibilitas kontrak respons lama.
                     'unit_id' => null,
                     'unit_name' => null,
                 ];
             }
 
-            if ($row['unit_id'] !== null && $row['unit_code'] !== null) {
-                $unit = [
-                    'id' => (int) $row['unit_id'],
-                    'code' => $row['unit_code'],
-                    'name' => $row['unit_name'],
-                    'unit_type' => $row['unit_type'],
-                    'is_default' => (int) $row['unit_is_default'],
-                ];
+            if ($row['unit_id'] === null || $row['unit_code'] === null) {
+                continue;
+            }
 
-                $organizations[$membershipId]['units'][] = $unit;
+            $unitId = (int) $row['unit_id'];
 
-                if (
-                    (int) $row['unit_is_default'] === 1
-                    || $organizations[$membershipId]['unit_id'] === null
-                ) {
-                    $organizations[$membershipId]['unit_id'] = $unit['id'];
-                    $organizations[$membershipId]['unit_name'] = $unit['name'];
+            // Lindungi respons dari duplikasi relasi unit.
+            $alreadyAdded = false;
+            foreach ($organizations[$membershipId]['units'] as $existingUnit) {
+                if ($existingUnit['id'] === $unitId) {
+                    $alreadyAdded = true;
+                    break;
                 }
+            }
+
+            if ($alreadyAdded) {
+                continue;
+            }
+
+            $unit = [
+                'id' => $unitId,
+                'code' => $row['unit_code'],
+                'name' => $row['unit_name'],
+                'unit_type' => $row['unit_type'],
+                'is_default' => (int) $row['unit_is_default'],
+            ];
+
+            $organizations[$membershipId]['units'][] = $unit;
+
+            if (
+                $unit['is_default'] === 1
+                || $organizations[$membershipId]['unit_id'] === null
+            ) {
+                $organizations[$membershipId]['unit_id'] = $unit['id'];
+                $organizations[$membershipId]['unit_name'] = $unit['name'];
             }
         }
 
@@ -125,10 +152,17 @@ class OrganizationContextService
     }
 
     /**
-     * Menentukan konteks awal pengguna.
+     * Memilih konteks awal hanya jika hasilnya tidak ambigu:
+     * satu organisasi, atau tepat satu organisasi default.
      */
     public function resolveInitialContext(int $userId): ?array
     {
+        if ($userId <= 0) {
+            $this->clearContext();
+
+            return null;
+        }
+
         $organizations = $this->getAvailableOrganizations($userId);
 
         if ($organizations === []) {
@@ -146,8 +180,7 @@ class OrganizationContextService
 
         $defaults = array_values(array_filter(
             $organizations,
-            static fn (array $item): bool =>
-                (int) $item['is_default'] === 1
+            static fn (array $item): bool => (int) $item['is_default'] === 1
         ));
 
         if (count($defaults) === 1) {
@@ -163,12 +196,9 @@ class OrganizationContextService
     }
 
     /**
-     * Memilih organisasi dan unit aktif.
+     * Mengganti organisasi dan/atau unit aktif.
      *
-     * Jika unit_id tidak dikirim:
-     * - Pilih unit default jika ada.
-     * - Jika hanya ada satu unit, pilih unit tersebut.
-     * - Jika ada beberapa unit tanpa default, konteks unit tetap null.
+     * Unit yang dikirim harus menjadi bagian dari membership aktif user.
      */
     public function switchOrganization(
         int $userId,
@@ -198,6 +228,7 @@ class OrganizationContextService
         }
 
         session()->set(self::SESSION_KEY, [
+            'user_id' => $userId,
             'organization_id' => $context['organization']['id'],
             'membership_id' => $context['membership']['id'],
             'unit_id' => $context['unit']['id'] ?? null,
@@ -207,27 +238,33 @@ class OrganizationContextService
     }
 
     /**
-     * Membaca konteks aktif dan memvalidasi ulang membership serta unit.
+     * Mengambil konteks dari session dan memvalidasi ulang ke database
+     * pada setiap request. Session tidak dianggap sebagai sumber otoritatif.
      */
     public function getCurrentContext(int $userId): ?array
     {
         if ($userId <= 0) {
             $this->clearContext();
+
             return null;
         }
 
         $sessionContext = session()->get(self::SESSION_KEY);
 
         if (
-            !is_array($sessionContext)
-            || empty($sessionContext['organization_id'])
-            || empty($sessionContext['membership_id'])
+            ! is_array($sessionContext)
+            || (int) ($sessionContext['user_id'] ?? 0) !== $userId
+            || (int) ($sessionContext['organization_id'] ?? 0) <= 0
+            || (int) ($sessionContext['membership_id'] ?? 0) <= 0
         ) {
+            if ($sessionContext !== null) {
+                $this->clearContext();
+            }
+
             return null;
         }
 
         $organizationId = (int) $sessionContext['organization_id'];
-
         $unitId = isset($sessionContext['unit_id'])
             ? (int) $sessionContext['unit_id']
             : null;
@@ -238,8 +275,9 @@ class OrganizationContextService
                 $organizationId,
                 $unitId
             );
-        } catch (InvalidArgumentException $e) {
+        } catch (InvalidArgumentException) {
             $this->clearContext();
+
             return null;
         }
 
@@ -249,6 +287,7 @@ class OrganizationContextService
                 !== (int) $sessionContext['membership_id']
         ) {
             $this->clearContext();
+
             return null;
         }
 
@@ -261,7 +300,7 @@ class OrganizationContextService
     }
 
     /**
-     * Memuat organisasi, membership, dan unit yang terhubung.
+     * Memuat organisasi, membership, dan unit yang dapat diakses user.
      */
     private function loadOrganizationContext(
         int $userId,
@@ -274,6 +313,7 @@ class OrganizationContextService
                 'm.id AS membership_id',
                 'm.organization_id',
                 'm.user_id',
+                'm.unit_id AS legacy_unit_id',
                 'm.membership_role',
                 'm.status AS membership_status',
                 'm.is_default',
@@ -311,18 +351,39 @@ class OrganizationContextService
             ])
             ->join(
                 'core_organization_units ou',
-                'ou.id = mu.organization_unit_id',
+                'ou.id = mu.organization_unit_id'
+                    . ' AND ou.organization_id = mu.organization_id',
                 'inner'
             )
             ->where('mu.organization_id', $organizationId)
-->where('mu.membership_id', $membership['membership_id'])
-->where('ou.organization_id', $organizationId)
+            ->where('mu.membership_id', (int) $membership['membership_id'])
             ->where('ou.status', 'active')
             ->where('ou.deleted_at', null)
             ->orderBy('mu.is_default', 'DESC')
             ->orderBy('ou.name', 'ASC')
             ->get()
             ->getResultArray();
+
+        // Fallback untuk membership lama yang belum memiliki baris pivot unit.
+        if (
+            $units === []
+            && ! empty($membership['legacy_unit_id'])
+        ) {
+            $legacyUnit = $this->db
+                ->table('core_organization_units')
+                ->select(['id', 'code', 'name', 'unit_type'])
+                ->where('id', (int) $membership['legacy_unit_id'])
+                ->where('organization_id', $organizationId)
+                ->where('status', 'active')
+                ->where('deleted_at', null)
+                ->get()
+                ->getRowArray();
+
+            if ($legacyUnit !== null) {
+                $legacyUnit['is_default'] = 1;
+                $units[] = $legacyUnit;
+            }
+        }
 
         $selectedUnit = null;
 
@@ -361,14 +422,12 @@ class OrganizationContextService
                 'timezone' => $membership['timezone'],
                 'currency' => $membership['currency'],
             ],
-
             'unit' => $selectedUnit === null ? null : [
                 'id' => (int) $selectedUnit['id'],
                 'code' => $selectedUnit['code'],
                 'name' => $selectedUnit['name'],
                 'unit_type' => $selectedUnit['unit_type'],
             ],
-
             'available_units' => array_map(
                 static fn (array $unit): array => [
                     'id' => (int) $unit['id'],
@@ -379,7 +438,6 @@ class OrganizationContextService
                 ],
                 $units
             ),
-
             'membership' => [
                 'id' => (int) $membership['membership_id'],
                 'user_id' => (int) $membership['user_id'],
