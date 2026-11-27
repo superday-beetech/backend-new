@@ -198,6 +198,8 @@ final class RouteRegistrySynchronizer
             throw new RuntimeException('syncRouteRegistry gagal menyimpan route_registry.');
         }
 
+        service('routeRegistryAccess')->clearCache();
+
         return count($insert) + count($reappeared);
     }
 }
