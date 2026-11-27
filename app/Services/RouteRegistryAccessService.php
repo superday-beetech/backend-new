@@ -75,22 +75,16 @@ class RouteRegistryAccessService
         return $module . '|' . $endpoint;
     }
 
-    // ============================================================
-    // Cache invalidation
-    // ============================================================
-
     /**
-     * Membersihkan cache.
-     *
-     * Jika module diberikan, hanya cache module tersebut yang dibersihkan.
-     * Jika module tidak diberikan, semua module untuk endpoint tersebut
-     * akan dibersihkan.
-     *
-     * Jika endpoint null, seluruh route cache dibersihkan.
-     *
-     * Jika routeId diberikan, hanya permission cache route tersebut
-     * yang dibersihkan.
-     */
+ * Membersihkan cache.
+ *
+ * - endpoint null, routeId null, module null → full clear.
+ * - endpoint null, module != null → clear routeCache & routeInfoCache
+ *   untuk module tsb; verbCache di-clear seluruhnya (karena di-key
+ *   oleh routeId, tidak bisa per module tanpa query).
+ * - endpoint != null, module != null → clear spesifik.
+ * - routeId != null → clear permissions & verb untuk route tsb.
+ */
     public function clearCache(
         ?string $endpoint = null,
         ?int $routeId = null,
@@ -99,17 +93,12 @@ class RouteRegistryAccessService
         if ($endpoint === null) {
             $this->routeCache = [];
             $this->routeInfoCache = [];
-
-            if ($module === null) {
-                $this->verbCache = [];
-            }
         } else {
             $endpoint = trim($endpoint);
 
             if ($module !== null) {
                 $module = trim($module);
 
-                // routeCache: module|endpoint|verb
                 $prefix = $module . '|' . $endpoint . '|';
                 foreach (array_keys($this->routeCache) as $key) {
                     if (str_starts_with($key, $prefix)) {
@@ -117,10 +106,8 @@ class RouteRegistryAccessService
                     }
                 }
 
-                // routeInfoCache: module|endpoint
                 unset($this->routeInfoCache[$module . '|' . $endpoint]);
             } else {
-                // Hapus semua module untuk endpoint ini.
                 foreach (array_keys($this->routeCache) as $key) {
                     $parts = explode('|', $key, 3);
                     if (count($parts) === 3 && $parts[1] === $endpoint) {
@@ -145,7 +132,10 @@ class RouteRegistryAccessService
         } else {
             $this->routePermissionsCache = [];
 
-            if ($endpoint === null && $module === null) {
+            // verbCache di-key oleh routeId. Tidak ada cara membersihkan
+            // per module/endpoint tanpa query. Saat endpoint === null,
+            // clear semua untuk mencegah data stale.
+            if ($endpoint === null) {
                 $this->verbCache = [];
             }
         }
