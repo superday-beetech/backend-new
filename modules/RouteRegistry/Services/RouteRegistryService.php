@@ -13,24 +13,52 @@ class RouteRegistryService
 
     protected RouteRegistryRepository $repository;
 
+    protected \App\Services\RouteRegistryAccessService $routeRegistryAccess;
+
     public function __construct(
         ?ModuleScannerService $scanner = null,
-        ?RouteRegistryRepository $repository = null
+        ?RouteRegistryRepository $repository = null,
+        ?\App\Services\RouteRegistryAccessService $routeRegistryAccess = null
     ) {
         $this->scanner = $scanner ?? new ModuleScannerService();
 
         $this->repository = $repository
             ?? new RouteRegistryRepository();
+
+        $this->routeRegistryAccess = $routeRegistryAccess
+            ?? service('routeRegistryAccess');
+    }
+
+    /**
+     * Invalidasi seluruh cache akses setelah mutasi registry berhasil.
+     */
+    private function invalidateAccessCache(): void
+    {
+        $this->routeRegistryAccess->clearCache();
+
+        // Route Registry dapat menyinkronkan permission Shield.
+        // Bersihkan cache otorisasi bersama agar perubahan permission
+        // tidak tertahan oleh cache instance selama request berjalan.
+        service('accessControl')->clearCache();
     }
 
     public function syncPermissions(array $items): array
     {
-        return $this->repository->syncPermissions($items);
+        $result = $this->repository->syncPermissions($items);
+
+        if (($result['inserted'] ?? 0) > 0) {
+            $this->invalidateAccessCache();
+        }
+
+        return $result;
     }
 
     public function syncNavigation(array $items): array
     {
-        return $this->repository->syncNavigation($items);
+        $result = $this->repository->syncNavigation($items);
+        $this->invalidateAccessCache();
+
+        return $result;
     }
 
 
@@ -80,7 +108,7 @@ class RouteRegistryService
 
         $action = strtolower(trim($action));
 
-        return match ($action) {
+        $result = match ($action) {
             'insert' => $this->repository->insertSelected(
                 $this->validateScanItems($selected)
             ),
@@ -97,6 +125,10 @@ class RouteRegistryService
                 'Tindakan tidak dikenal.'
             ),
         };
+
+        $this->invalidateAccessCache();
+
+        return $result;
     }
 
     /**
@@ -193,10 +225,14 @@ class RouteRegistryService
             );
         }
 
-        return $this->repository->saveVerbs(
+        $result = $this->repository->saveVerbs(
             $endpoint,
             $verbs
         );
+
+        $this->invalidateAccessCache();
+
+        return $result;
     }
 
     /**
@@ -220,11 +256,15 @@ class RouteRegistryService
         string $field,
         bool $enabled
     ): array {
-        return $this->repository->updateStatus(
+        $result = $this->repository->updateStatus(
             $routeId,
             $field,
             $enabled
         );
+
+        $this->invalidateAccessCache();
+
+        return $result;
     }
 
     public function getVerbsById(int $routeId): array
@@ -253,12 +293,16 @@ class RouteRegistryService
         string $controller,
         string $method
     ): array {
-        return $this->repository->updateEndpointIdentity(
+        $result = $this->repository->updateEndpointIdentity(
             $routeId,
             $module,
             $controller,
             $method
         );
+
+        $this->invalidateAccessCache();
+
+        return $result;
     }
 
 

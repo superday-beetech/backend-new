@@ -198,6 +198,11 @@ final class RouteRegistrySynchronizer
             throw new RuntimeException('syncRouteRegistry gagal menyimpan route_registry.');
         }
 
+        // Sinkronisasi dapat menambah, mengaktifkan kembali, atau menonaktifkan route.
+        // Bersihkan cache hanya setelah transaksi database berhasil.
+        service('routeRegistryAccess')->clearCache();
+        service('accessControl')->clearCache();
+
         return count($insert) + count($reappeared);
     }
 }
