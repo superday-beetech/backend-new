@@ -260,7 +260,7 @@ $routes->post('api/v1/erp/settings', 'ErpApiController::settings', ['filter' => 
 $routes->get('uploads/products/(:segment)', 'FileController::productImage/$1');
 $routes->get('uploads/products/temp/(:segment)', 'FileController::tempImage/$1', ['filter' => 'rbac']);
 $routes->get('problems/(:segment)', 'Problems::show/$1');
-
+$routes->get('api/v1/csrf', 'CsrfController::token');
 // Webhook (payment gateway / marketplace): wajib validasi signature di filter.
 $routes->group(
     'webhook',
