@@ -99,9 +99,9 @@ class AuthController extends ApiController
         );
 
         if (! $result->isOK()) {
-            return $this->errorResponse(
-                'Username/Email atau Password tidak valid.',
-                401
+            return $this->apiFail(
+                ApiErrorCode::UNAUTHENTICATED,
+                'Username/Email atau Password tidak valid.'
             );
         }
 
