@@ -272,7 +272,7 @@ class ApiController extends ResourceController
         }
 
         // 2. Exception validasi CodeIgniter & PHP global.
-        if ($e instanceof \InvalidArgumentException) {
+        if ($e instanceof InvalidArgumentException) {
             return $this->apiFail(
                 ApiErrorCode::VALIDATION_ERROR,
                 $e->getMessage()
