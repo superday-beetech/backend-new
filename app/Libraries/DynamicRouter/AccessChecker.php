@@ -530,43 +530,119 @@ class AccessChecker
     }
 
 
-    private function resolvePolicyOverride(string $endpoint, string $httpVerb): ?string
-    {
-        $requestPath = trim($this->request->getUri()->getPath(), '/');
+
+    private function resolvePolicyOverride(
+        string $endpoint,
+        string $httpVerb
+    ): ?string {
+        $requestPath = trim(
+            $this->request->getUri()->getPath(),
+            '/'
+        );
+
         $matched = [];
 
         foreach ($this->policy->overrides as $pattern => $permission) {
             if (! is_string($pattern) || ! is_string($permission)) {
-                continue;
+                throw new \UnexpectedValueException(
+                    'Format permission override tidak valid.'
+                );
             }
 
-            if (! $this->matchesPolicyPattern($requestPath, $pattern, $httpVerb)) {
-                continue;
-            }
-
+            $pattern = trim($pattern);
             $permission = trim($permission);
-            if ($permission === '') {
-                throw new \UnexpectedValueException("Permission override kosong: {$pattern}");
+
+            if ($pattern === '' || $permission === '') {
+                throw new \UnexpectedValueException(
+                    "Permission override kosong: {$pattern}"
+                );
             }
 
-            // Skor spesifisitas: semakin sedikit wildcard, semakin tinggi.
-            $score = substr_count($pattern, '*');
-            $matched[] = ['permission' => $permission, 'score' => $score, 'pattern' => $pattern];
+            if (! $this->matchesPolicyPattern(
+                $requestPath,
+                $pattern,
+                $httpVerb
+            )) {
+                continue;
+            }
+
+            // Hilangkan prefix HTTP verb untuk menghitung
+            // tingkat spesifisitas pola path saja.
+            $pathPattern = $pattern;
+
+            if (preg_match('/^[A-Z]+\s+/i', $pathPattern)) {
+                $pathPattern = preg_replace(
+                    '/^[A-Z]+\s+/i',
+                    '',
+                    $pathPattern
+                );
+            }
+
+            $wildcardCount = substr_count($pathPattern, '*');
+
+            $literalLength = strlen(
+                str_replace('*', '', $pathPattern)
+            );
+
+            $matched[] = [
+                'pattern'        => $pattern,
+                'permission'     => $permission,
+                'wildcards'      => $wildcardCount,
+                'literal_length' => $literalLength,
+            ];
         }
 
         if ($matched === []) {
             return null;
         }
 
-        usort($matched, static fn ($a, $b) => $a['score'] <=> $b['score']);
+        // Prioritas:
+        // 1. Wildcard paling sedikit.
+        // 2. Karakter literal paling banyak.
+        usort(
+            $matched,
+            static function (array $a, array $b): int {
+                $wildcardCompare = $a['wildcards']
+                    <=> $b['wildcards'];
 
-        if (count($matched) > 1 && $matched[0]['score'] === $matched[1]['score']) {
-            log_message('warning', 'AccessChecker: override ambigu untuk path ' . $requestPath
-                . ' — pola: ' . $matched[0]['pattern'] . ' vs ' . $matched[1]['pattern']);
+                if ($wildcardCompare !== 0) {
+                    return $wildcardCompare;
+                }
+
+                return $b['literal_length']
+                    <=> $a['literal_length'];
+            }
+        );
+
+        $best = $matched[0];
+
+        // Periksa semua pola dengan tingkat spesifisitas sama.
+        foreach (array_slice($matched, 1) as $candidate) {
+            $sameSpecificity =
+                $candidate['wildcards'] === $best['wildcards']
+                && $candidate['literal_length'] === $best['literal_length'];
+
+            if (! $sameSpecificity) {
+                break;
+            }
+
+            // Permission berbeda pada tingkat spesifisitas sama:
+            // jangan memilih berdasarkan urutan konfigurasi.
+            if ($candidate['permission'] !== $best['permission']) {
+                throw new \UnexpectedValueException(
+                    'Permission override ambigu untuk path '
+                    . $requestPath
+                    . ': '
+                    . $best['pattern']
+                    . ' vs '
+                    . $candidate['pattern']
+                );
+            }
         }
 
-        return $matched[0]['permission'];
+        return $best['permission'];
     }
+
 
     private function isPolicyBypassGroup(int $userId): bool
     {
