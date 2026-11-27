@@ -10,7 +10,6 @@ use CodeIgniter\HTTP\IncomingRequest;
 use CodeIgniter\HTTP\RequestInterface;
 use CodeIgniter\HTTP\ResponseInterface;
 use Config\AuthPolicy;
-use Modules\Core\Services\OrganizationContextService;
 use Throwable;
 
 final class OrganizationContextFilter implements FilterInterface
@@ -98,7 +97,7 @@ final class OrganizationContextFilter implements FilterInterface
                 );
             }
 
-            $context = (new OrganizationContextService())->getCurrentContext(
+            $context = service('organizationContext')->getCurrentContext(
                 (int) $user->id
             );
 
