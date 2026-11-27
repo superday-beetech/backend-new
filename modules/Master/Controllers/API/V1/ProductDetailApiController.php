@@ -26,19 +26,19 @@ class ProductDetailApiController extends ApiController
         try {
             $productId = (int) $productId;
             if ($productId <= 0) {
-                return $this->errorResponse('ID produk tidak valid.', 400);
+                return $this->apiFail('ID produk tidak valid.', 400);
             }
 
             $detail = $this->detailModel->where('product_id', $productId)->first();
 
             if (!$detail) {
-                return $this->errorResponse('Detail farmasi belum ada.', 404);
+                return $this->apiFail('Detail farmasi belum ada.', 404);
             }
 
-            return $this->successResponse($detail, 'Detail farmasi berhasil diambil.');
+            return $this->apiOk($detail, 'Detail farmasi berhasil diambil.');
         } catch (Throwable $e) {
             log_message('error', '[ProductDetailApiController::show] ' . $e->getMessage());
-            return $this->errorResponse('Gagal mengambil detail farmasi.', 500);
+            return $this->apiFail('Gagal mengambil detail farmasi.', 500);
         }
     }
 
@@ -47,17 +47,17 @@ class ProductDetailApiController extends ApiController
         try {
             $data = $this->request->getJSON(true);
             if (!is_array($data) || empty($data['product_id'])) {
-                return $this->errorResponse('product_id wajib diisi.', 400);
+                return $this->apiFail('product_id wajib diisi.', 400);
             }
 
             $productId = (int) $data['product_id'];
 
             if (!$this->productModel->find($productId)) {
-                return $this->errorResponse('Produk tidak ditemukan.', 404);
+                return $this->apiFail('Produk tidak ditemukan.', 404);
             }
 
             if ($this->detailModel->where('product_id', $productId)->first()) {
-                return $this->errorResponse('Detail farmasi sudah ada untuk produk ini.', 409);
+                return $this->apiFail('Detail farmasi sudah ada untuk produk ini.', 409);
             }
 
             $id = $this->detailModel->insert([
@@ -76,13 +76,13 @@ class ProductDetailApiController extends ApiController
             ]);
 
             if (!$id) {
-                return $this->errorResponse('Gagal menyimpan detail farmasi.', 500);
+                return $this->apiFail('Gagal menyimpan detail farmasi.', 500);
             }
 
-            return $this->successResponse($this->detailModel->find($id), 'Detail farmasi berhasil ditambahkan.', 201);
+            return $this->apiOk($this->detailModel->find($id), 'Detail farmasi berhasil ditambahkan.', 201);
         } catch (Throwable $e) {
             log_message('error', '[ProductDetailApiController::create] ' . $e->getMessage());
-            return $this->errorResponse('Gagal menambahkan detail farmasi.', 500);
+            return $this->apiFail('Gagal menambahkan detail farmasi.', 500);
         }
     }
 
@@ -91,17 +91,17 @@ class ProductDetailApiController extends ApiController
         try {
             $productId = (int) $productId;
             if ($productId <= 0) {
-                return $this->errorResponse('ID produk tidak valid.', 400);
+                return $this->apiFail('ID produk tidak valid.', 400);
             }
 
             $detail = $this->detailModel->where('product_id', $productId)->first();
             if (!$detail) {
-                return $this->errorResponse('Detail farmasi tidak ditemukan.', 404);
+                return $this->apiFail('Detail farmasi tidak ditemukan.', 404);
             }
 
             $data = $this->request->getJSON(true);
             if (!is_array($data)) {
-                return $this->errorResponse('Format request tidak valid.', 400);
+                return $this->apiFail('Format request tidak valid.', 400);
             }
 
             $allowed = [
@@ -118,15 +118,15 @@ class ProductDetailApiController extends ApiController
             }
 
             if (!$update) {
-                return $this->errorResponse('Tidak ada data yang diperbarui.', 400);
+                return $this->apiFail('Tidak ada data yang diperbarui.', 400);
             }
 
             $this->detailModel->update($detail['id'], $update);
 
-            return $this->successResponse($this->detailModel->find($detail['id']), 'Detail farmasi berhasil diperbarui.');
+            return $this->apiOk($this->detailModel->find($detail['id']), 'Detail farmasi berhasil diperbarui.');
         } catch (Throwable $e) {
             log_message('error', '[ProductDetailApiController::update] ' . $e->getMessage());
-            return $this->errorResponse('Gagal memperbarui detail farmasi.', 500);
+            return $this->apiFail('Gagal memperbarui detail farmasi.', 500);
         }
     }
 
@@ -135,20 +135,20 @@ class ProductDetailApiController extends ApiController
         try {
             $productId = (int) $productId;
             if ($productId <= 0) {
-                return $this->errorResponse('ID produk tidak valid.', 400);
+                return $this->apiFail('ID produk tidak valid.', 400);
             }
 
             $detail = $this->detailModel->where('product_id', $productId)->first();
             if (!$detail) {
-                return $this->errorResponse('Detail farmasi tidak ditemukan.', 404);
+                return $this->apiFail('Detail farmasi tidak ditemukan.', 404);
             }
 
             $this->detailModel->delete($detail['id']);
 
-            return $this->successResponse(['product_id' => $productId], 'Detail farmasi berhasil dihapus.');
+            return $this->apiOk(['product_id' => $productId], 'Detail farmasi berhasil dihapus.');
         } catch (Throwable $e) {
             log_message('error', '[ProductDetailApiController::delete] ' . $e->getMessage());
-            return $this->errorResponse('Gagal menghapus detail farmasi.', 500);
+            return $this->apiFail('Gagal menghapus detail farmasi.', 500);
         }
     }
 }

@@ -36,13 +36,13 @@ class UserGroupsController extends ApiController
             );
 
             if ($userId !== false && $userId !== null && $userId < 1) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'ID user tidak valid.',
                     400
                 );
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->userGroupService->getOverview(
                     $userId !== false && $userId !== null
                         ? $userId
@@ -56,7 +56,7 @@ class UserGroupsController extends ApiController
                 '[RBAC UserGroups][index] ' . $e->getMessage()
             );
 
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Gagal memuat data group user.',
                 500
             );
@@ -76,7 +76,7 @@ class UserGroupsController extends ApiController
         $userId = filter_var($id, FILTER_VALIDATE_INT);
 
         if ($userId === false || $userId === null || $userId < 1) {
-            return $this->errorResponse(
+            return $this->apiFail(
                 'ID user tidak valid.',
                 400
             );
@@ -89,7 +89,7 @@ class UserGroupsController extends ApiController
             || ! array_key_exists('groups', $data)
             || ! is_array($data['groups'])
         ) {
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Body JSON harus berisi array groups.',
                 400
             );
@@ -101,12 +101,12 @@ class UserGroupsController extends ApiController
                 $data['groups']
             );
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->userGroupService->getOverview($userId),
                 'Group user berhasil diperbarui.'
             );
         } catch (DomainException $e) {
-            return $this->errorResponse(
+            return $this->apiFail(
                 $e->getMessage(),
                 422
             );
@@ -116,7 +116,7 @@ class UserGroupsController extends ApiController
                 '[RBAC UserGroups][update] ' . $e->getMessage()
             );
 
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Gagal memperbarui group user.',
                 500
             );

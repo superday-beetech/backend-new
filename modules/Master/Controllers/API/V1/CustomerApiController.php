@@ -43,7 +43,7 @@ class CustomerApiController extends ApiController
                 $isActive !== '' &&
                 !in_array((string) $isActive, ['0', '1'], true)
             ) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Status customer tidak valid.',
                     400
                 );
@@ -98,7 +98,7 @@ class CustomerApiController extends ApiController
                 ->get($perPage, ($page - 1) * $perPage)
                 ->getResultArray();
 
-            return $this->successResponse([
+            return $this->apiOk([
                 'items' => $items,
                 'pagination' => [
                     'current_page' => $page,
@@ -113,7 +113,7 @@ class CustomerApiController extends ApiController
                 '[CustomerApiController::index] ' . $e->getMessage()
             );
 
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Gagal mengambil data customer.',
                 500
             );
@@ -128,12 +128,12 @@ class CustomerApiController extends ApiController
         $customerId = $this->validId($id);
 
         if (!$customerId) {
-            return $this->errorResponse('ID customer tidak valid.', 400);
+            return $this->apiFail('ID customer tidak valid.', 400);
         }
         try {
 
             if ($customerId <= 0) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'ID customer tidak valid.',
                     400
                 );
@@ -142,13 +142,13 @@ class CustomerApiController extends ApiController
             $customer = $this->customerModel->find($customerId);
 
             if (!$customer) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Customer tidak ditemukan.',
                     404
                 );
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $customer,
                 'Detail customer berhasil diambil.'
             );
@@ -158,7 +158,7 @@ class CustomerApiController extends ApiController
                 '[CustomerApiController::show] ' . $e->getMessage()
             );
 
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Gagal mengambil detail customer.',
                 500
             );
@@ -174,7 +174,7 @@ class CustomerApiController extends ApiController
             $data = $this->getRequestData();
 
             if (empty($data)) {
-                return $this->errorResponse('Tidak ada data yang diperbarui.', 400);
+                return $this->apiFail('Tidak ada data yang diperbarui.', 400);
             }
 
             $code = strtoupper(trim((string) ($data['code'] ?? '')));
@@ -189,28 +189,28 @@ class CustomerApiController extends ApiController
             $address = trim((string) ($data['address'] ?? ''));
 
             if ($code === '' || strlen($code) > 50) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Kode customer wajib diisi dan maksimal 50 karakter.',
                     422
                 );
             }
 
             if ($name === '' || mb_strlen($name) > 150) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Nama customer wajib diisi dan maksimal 150 karakter.',
                     422
                 );
             }
 
             if (strlen($customerType) > 30) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Jenis customer maksimal 30 karakter.',
                     422
                 );
             }
 
             if (strlen($phone) > 30) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Nomor telepon maksimal 30 karakter.',
                     422
                 );
@@ -220,14 +220,14 @@ class CustomerApiController extends ApiController
                 strlen($email) > 150 ||
                 ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL))
             ) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Format email tidak valid.',
                     422
                 );
             }
 
             if ($this->customerModel->where('code', $code)->first()) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Kode customer sudah digunakan.',
                     409
                 );
@@ -236,7 +236,7 @@ class CustomerApiController extends ApiController
             $isActive = $data['is_active'] ?? 1;
 
             if (!in_array((string) $isActive, ['0', '1'], true)) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Status customer tidak valid.',
                     422
                 );
@@ -254,7 +254,7 @@ class CustomerApiController extends ApiController
             ];
 
             if (!$this->customerModel->insert($insertData)) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     $this->customerModel->errors()
                         ?: 'Gagal menyimpan customer.',
                     422
@@ -263,7 +263,7 @@ class CustomerApiController extends ApiController
 
             $id = (int) $this->customerModel->getInsertID();
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->customerModel->find($id),
                 'Customer berhasil ditambahkan.',
                 201
@@ -274,7 +274,7 @@ class CustomerApiController extends ApiController
                 '[CustomerApiController::create] ' . $e->getMessage()
             );
 
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Gagal menambahkan customer.',
                 500
             );
@@ -289,13 +289,13 @@ class CustomerApiController extends ApiController
         $customerId = $this->validId($id);
 
         if (!$customerId) {
-            return $this->errorResponse('ID customer tidak valid.', 400);
+            return $this->apiFail('ID customer tidak valid.', 400);
         }
 
         try {
 
             if ($customerId <= 0) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'ID customer tidak valid.',
                     400
                 );
@@ -304,7 +304,7 @@ class CustomerApiController extends ApiController
             $customer = $this->customerModel->find($customerId);
 
             if (!$customer) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Customer tidak ditemukan.',
                     404
                 );
@@ -313,7 +313,7 @@ class CustomerApiController extends ApiController
             $data = $this->getRequestData();
 
             if (empty($data)) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Tidak ada data yang diperbarui.',
                     400
                 );
@@ -335,7 +335,7 @@ class CustomerApiController extends ApiController
             );
 
             if (empty($updateData)) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Tidak ada field yang valid.',
                     400
                 );
@@ -345,7 +345,7 @@ class CustomerApiController extends ApiController
                 $code = strtoupper(trim((string) $updateData['code']));
 
                 if ($code === '' || strlen($code) > 50) {
-                    return $this->errorResponse(
+                    return $this->apiFail(
                         'Kode customer wajib diisi dan maksimal 50 karakter.',
                         422
                     );
@@ -357,7 +357,7 @@ class CustomerApiController extends ApiController
                     ->first();
 
                 if ($duplicate) {
-                    return $this->errorResponse(
+                    return $this->apiFail(
                         'Kode customer sudah digunakan.',
                         409
                     );
@@ -370,7 +370,7 @@ class CustomerApiController extends ApiController
                 $name = trim((string) $updateData['name']);
 
                 if ($name === '' || mb_strlen($name) > 150) {
-                    return $this->errorResponse(
+                    return $this->apiFail(
                         'Nama customer wajib diisi dan maksimal 150 karakter.',
                         422
                     );
@@ -383,7 +383,7 @@ class CustomerApiController extends ApiController
                 $type = trim((string) ($updateData['customer_type'] ?? ''));
 
                 if (strlen($type) > 30) {
-                    return $this->errorResponse(
+                    return $this->apiFail(
                         'Jenis customer maksimal 30 karakter.',
                         422
                     );
@@ -396,7 +396,7 @@ class CustomerApiController extends ApiController
                 $phone = trim((string) ($updateData['phone'] ?? ''));
 
                 if (strlen($phone) > 30) {
-                    return $this->errorResponse(
+                    return $this->apiFail(
                         'Nomor telepon maksimal 30 karakter.',
                         422
                     );
@@ -412,7 +412,7 @@ class CustomerApiController extends ApiController
                     strlen($email) > 150 ||
                     ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL))
                 ) {
-                    return $this->errorResponse(
+                    return $this->apiFail(
                         'Format email tidak valid.',
                         422
                     );
@@ -429,7 +429,7 @@ class CustomerApiController extends ApiController
 
             if (array_key_exists('is_active', $updateData)) {
                 if (!in_array((string) $updateData['is_active'], ['0', '1'], true)) {
-                    return $this->errorResponse(
+                    return $this->apiFail(
                         'Status customer tidak valid.',
                         422
                     );
@@ -441,14 +441,14 @@ class CustomerApiController extends ApiController
             $updateData['updated_by'] = auth()->id();
 
             if (!$this->customerModel->update($id, $updateData)) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     $this->customerModel->errors()
                         ?: 'Gagal memperbarui customer.',
                     422
                 );
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->customerModel->find($id),
                 'Customer berhasil diperbarui.'
             );
@@ -458,7 +458,7 @@ class CustomerApiController extends ApiController
                 '[CustomerApiController::update] ' . $e->getMessage()
             );
 
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Gagal memperbarui customer.',
                 500
             );
@@ -474,7 +474,7 @@ class CustomerApiController extends ApiController
             $id = (int) $id;
 
             if ($id <= 0) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'ID customer tidak valid.',
                     400
                 );
@@ -483,20 +483,20 @@ class CustomerApiController extends ApiController
             $customer = $this->customerModel->find($id);
 
             if (!$customer) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Customer tidak ditemukan.',
                     404
                 );
             }
 
             if (!$this->customerModel->delete($id)) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Gagal menghapus customer.',
                     500
                 );
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 null,
                 'Customer berhasil dihapus.'
             );
@@ -506,7 +506,7 @@ class CustomerApiController extends ApiController
                 '[CustomerApiController::delete] ' . $e->getMessage()
             );
 
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Gagal menghapus customer.',
                 500
             );

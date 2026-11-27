@@ -47,14 +47,14 @@ class ProductApiPosController extends ApiController
                 $parsedDate === false
                 || $parsedDate->format('Y-m-d') !== $saleDate
             ) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Tanggal transaksi tidak valid.',
                     400
                 );
             }
 
             if (mb_strlen($search) > 100) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Kata pencarian terlalu panjang.',
                     400
                 );
@@ -156,7 +156,7 @@ class ProductApiPosController extends ApiController
                 ->get()
                 ->getResultArray();
 
-            return $this->successResponse([
+            return $this->apiOk([
                 'items' => $items,
                 'pagination' => [
                     'current_page' => $page,
@@ -172,7 +172,7 @@ class ProductApiPosController extends ApiController
                 '[ProductApiPosController::index] ' . $e->getMessage()
             );
 
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Gagal mengambil produk POS.',
                 500
             );

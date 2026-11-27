@@ -47,7 +47,7 @@ class DoctorApiController extends ApiController
                 ->orderBy('name', 'ASC')
                 ->findAll($perPage, ($page - 1) * $perPage);
 
-            return $this->successResponse([
+            return $this->apiOk([
                 'items' => $items,
                 'pagination' => [
                     'current_page' => $page,
@@ -59,7 +59,7 @@ class DoctorApiController extends ApiController
         } catch (Throwable $e) {
             log_message('error', '[UnitApiController::index] ' . $e->getMessage());
 
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Gagal mengambil data Dokter.',
                 500
             );
@@ -75,23 +75,23 @@ class DoctorApiController extends ApiController
             $id = (int) $id;
 
             if ($id <= 0) {
-                return $this->errorResponse('ID Dokter tidak valid.', 400);
+                return $this->apiFail('ID Dokter tidak valid.', 400);
             }
 
             $unit = $this->doctorModel->find($id);
 
             if (!$unit) {
-                return $this->errorResponse('Dokter tidak ditemukan.', 404);
+                return $this->apiFail('Dokter tidak ditemukan.', 404);
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $unit,
                 'Detail Dokter berhasil diambil.'
             );
         } catch (Throwable $e) {
             log_message('error', '[UnitApiController::show] ' . $e->getMessage());
 
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Gagal mengambil detail Dokter.',
                 500
             );
@@ -107,7 +107,7 @@ class DoctorApiController extends ApiController
             $data = $this->request->getJSON(true);
 
             if (!is_array($data)) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Format request tidak valid.',
                     400
                 );
@@ -123,7 +123,7 @@ class DoctorApiController extends ApiController
                 'name' => 'required|min_length[2]|max_length[60]',
                 'abbreviation' => 'required|min_length[1]|max_length[20]',
             ])) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Validasi Dokter gagal.',
                     422,
                     $this->validator->getErrors()
@@ -131,14 +131,14 @@ class DoctorApiController extends ApiController
             }
 
             if ($this->doctorModel->where('name', $name)->first()) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Nama Dokter sudah digunakan.',
                     409
                 );
             }
 
             if ($this->doctorModel->where('abbreviation', $abbreviation)->first()) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Singkatan Dokter sudah digunakan.',
                     409
                 );
@@ -150,14 +150,14 @@ class DoctorApiController extends ApiController
             ]);
 
             if (!$id) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Gagal menyimpan Dokter.',
                     422,
                     $this->doctorModel->errors()
                 );
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->doctorModel->find($id),
                 'Dokter berhasil ditambahkan.',
                 201
@@ -178,19 +178,19 @@ class DoctorApiController extends ApiController
             $id = (int) $id;
 
             if ($id <= 0) {
-                return $this->errorResponse('ID Dokter tidak valid.', 400);
+                return $this->apiFail('ID Dokter tidak valid.', 400);
             }
 
             $existing = $this->doctorModel->find($id);
 
             if (!$existing) {
-                return $this->errorResponse('Dokter tidak ditemukan.', 404);
+                return $this->apiFail('Dokter tidak ditemukan.', 404);
             }
 
             $data = $this->request->getJSON(true);
 
             if (!is_array($data) || !$data) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Data perubahan wajib diisi.',
                     400
                 );
@@ -202,7 +202,7 @@ class DoctorApiController extends ApiController
             ];
 
             if (!$this->validateData($data, $rules)) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Validasi perubahan Dokter gagal.',
                     422,
                     $this->validator->getErrors()
@@ -214,7 +214,7 @@ class DoctorApiController extends ApiController
             foreach (['name', 'abbreviation'] as $field) {
                 if (array_key_exists($field, $data)) {
                     if (!is_string($data[$field])) {
-                        return $this->errorResponse(
+                        return $this->apiFail(
                             "Field {$field} harus berupa teks.",
                             422
                         );
@@ -225,7 +225,7 @@ class DoctorApiController extends ApiController
             }
 
             if (!$update) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Tidak ada data yang diperbarui.',
                     400
                 );
@@ -238,7 +238,7 @@ class DoctorApiController extends ApiController
                 ->where('id !=', $id)
                 ->first()
             ) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Nama Dokter sudah digunakan.',
                     409
                 );
@@ -251,21 +251,21 @@ class DoctorApiController extends ApiController
                 ->where('id !=', $id)
                 ->first()
             ) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Singkatan Dokter sudah digunakan.',
                     409
                 );
             }
 
             if (!$this->doctorModel->update($id, $update)) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Gagal memperbarui Dokter.',
                     422,
                     $this->doctorModel->errors()
                 );
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->doctorModel->find($id),
                 'Dokter berhasil diperbarui.'
             );
@@ -285,22 +285,22 @@ class DoctorApiController extends ApiController
             $id = (int) $id;
 
             if ($id <= 0) {
-                return $this->errorResponse('ID Dokter tidak valid.', 400);
+                return $this->apiFail('ID Dokter tidak valid.', 400);
             }
 
             if (!$this->doctorModel->find($id)) {
-                return $this->errorResponse('Dokter tidak ditemukan.', 404);
+                return $this->apiFail('Dokter tidak ditemukan.', 404);
             }
 
             if (!$this->doctorModel->delete($id)) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Gagal menghapus Dokter.',
                     422,
                     $this->doctorModel->errors()
                 );
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 ['id' => $id],
                 'Dokter berhasil dihapus.'
             );

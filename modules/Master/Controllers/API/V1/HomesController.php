@@ -52,10 +52,10 @@ class HomesController extends ApiController
                 ->orderBy('name', 'ASC')
                 ->findAll();
 
-            return $this->successResponse($data, 'Data pelanggan berhasil diambil.');
+            return $this->apiOk($data, 'Data pelanggan berhasil diambil.');
         } catch (Throwable $e) {
             log_message('error', '[CustomerApiController::index] ' . $e->getMessage());
-            return $this->errorResponse('Gagal mengambil data pelanggan.', 500);
+            return $this->apiFail('Gagal mengambil data pelanggan.', 500);
         }
     }
 
@@ -65,19 +65,19 @@ class HomesController extends ApiController
             $id = (int) $id;
 
             if ($id <= 0) {
-                return $this->errorResponse('ID pelanggan tidak valid.', 400);
+                return $this->apiFail('ID pelanggan tidak valid.', 400);
             }
 
             $customer = $this->customerModel->find($id);
 
             if (!$customer) {
-                return $this->errorResponse('Pelanggan tidak ditemukan.', 404);
+                return $this->apiFail('Pelanggan tidak ditemukan.', 404);
             }
 
-            return $this->successResponse($customer, 'Detail pelanggan berhasil diambil.');
+            return $this->apiOk($customer, 'Detail pelanggan berhasil diambil.');
         } catch (Throwable $e) {
             log_message('error', '[CustomerApiController::show] ' . $e->getMessage());
-            return $this->errorResponse('Gagal mengambil detail pelanggan.', 500);
+            return $this->apiFail('Gagal mengambil detail pelanggan.', 500);
         }
     }
 
@@ -87,7 +87,7 @@ class HomesController extends ApiController
             $data = $this->request->getJSON(true);
 
             if (!is_array($data)) {
-                return $this->errorResponse('Format request tidak valid.', 400);
+                return $this->apiFail('Format request tidak valid.', 400);
             }
 
             if (!$this->validateData($data, [
@@ -99,7 +99,7 @@ class HomesController extends ApiController
                 'address' => 'permit_empty|max_length[1000]',
                 'is_active' => 'permit_empty|in_list[0,1]',
             ])) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Validasi pelanggan gagal.',
                     422,
                     $this->validator->getErrors()
@@ -109,7 +109,7 @@ class HomesController extends ApiController
             $code = trim($data['code']);
 
             if ($this->customerModel->where('code', $code)->first()) {
-                return $this->errorResponse('Kode pelanggan sudah digunakan.', 409);
+                return $this->apiFail('Kode pelanggan sudah digunakan.', 409);
             }
 
             $userId = (int) auth()->id();
@@ -129,21 +129,21 @@ class HomesController extends ApiController
             ]);
 
             if (!$id) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Gagal menyimpan pelanggan.',
                     500,
                     $this->customerModel->errors()
                 );
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->customerModel->find($id),
                 'Pelanggan berhasil ditambahkan.',
                 201
             );
         } catch (Throwable $e) {
             log_message('error', '[CustomerApiController::create] ' . $e->getMessage());
-            return $this->errorResponse('Terjadi kesalahan saat menambahkan pelanggan.', 500);
+            return $this->apiFail('Terjadi kesalahan saat menambahkan pelanggan.', 500);
         }
     }
 
@@ -153,17 +153,17 @@ class HomesController extends ApiController
             $id = (int) $id;
 
             if ($id <= 0) {
-                return $this->errorResponse('ID pelanggan tidak valid.', 400);
+                return $this->apiFail('ID pelanggan tidak valid.', 400);
             }
 
             if (!$this->customerModel->find($id)) {
-                return $this->errorResponse('Pelanggan tidak ditemukan.', 404);
+                return $this->apiFail('Pelanggan tidak ditemukan.', 404);
             }
 
             $data = $this->request->getJSON(true);
 
             if (!is_array($data) || !$data) {
-                return $this->errorResponse('Data perubahan wajib diisi.', 400);
+                return $this->apiFail('Data perubahan wajib diisi.', 400);
             }
 
             if (!$this->validateData($data, [
@@ -175,7 +175,7 @@ class HomesController extends ApiController
                 'address' => 'permit_empty|max_length[1000]',
                 'is_active' => 'permit_empty|in_list[0,1]',
             ])) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Validasi perubahan pelanggan gagal.',
                     422,
                     $this->validator->getErrors()
@@ -209,7 +209,7 @@ class HomesController extends ApiController
                     ->first();
 
                 if ($duplicate) {
-                    return $this->errorResponse('Kode pelanggan sudah digunakan.', 409);
+                    return $this->apiFail('Kode pelanggan sudah digunakan.', 409);
                 }
             }
 
@@ -220,26 +220,26 @@ class HomesController extends ApiController
             }
 
             if (!$update) {
-                return $this->errorResponse('Tidak ada data yang diperbarui.', 400);
+                return $this->apiFail('Tidak ada data yang diperbarui.', 400);
             }
 
             $update['updated_by'] = (int) auth()->id();
 
             if (!$this->customerModel->update($id, $update)) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Gagal memperbarui pelanggan.',
                     500,
                     $this->customerModel->errors()
                 );
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->customerModel->find($id),
                 'Pelanggan berhasil diperbarui.'
             );
         } catch (Throwable $e) {
             log_message('error', '[CustomerApiController::update] ' . $e->getMessage());
-            return $this->errorResponse('Terjadi kesalahan saat memperbarui pelanggan.', 500);
+            return $this->apiFail('Terjadi kesalahan saat memperbarui pelanggan.', 500);
         }
     }
 
@@ -249,21 +249,21 @@ class HomesController extends ApiController
             $id = (int) $id;
 
             if ($id <= 0) {
-                return $this->errorResponse('ID pelanggan tidak valid.', 400);
+                return $this->apiFail('ID pelanggan tidak valid.', 400);
             }
 
             if (!$this->customerModel->find($id)) {
-                return $this->errorResponse('Pelanggan tidak ditemukan.', 404);
+                return $this->apiFail('Pelanggan tidak ditemukan.', 404);
             }
 
             if (!$this->customerModel->delete($id)) {
-                return $this->errorResponse('Gagal menghapus pelanggan.', 500);
+                return $this->apiFail('Gagal menghapus pelanggan.', 500);
             }
 
-            return $this->successResponse(['id' => $id], 'Pelanggan berhasil dihapus.');
+            return $this->apiOk(['id' => $id], 'Pelanggan berhasil dihapus.');
         } catch (Throwable $e) {
             log_message('error', '[CustomerApiController::delete] ' . $e->getMessage());
-            return $this->errorResponse('Terjadi kesalahan saat menghapus pelanggan.', 500);
+            return $this->apiFail('Terjadi kesalahan saat menghapus pelanggan.', 500);
         }
     }
 }

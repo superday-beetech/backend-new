@@ -30,7 +30,7 @@ class DashboardApiController extends ApiController
 
             $data = $this->dashboardService->getOverview($from, $to);
 
-            return $this->successResponse($data);
+            return $this->apiOk($data);
         } catch (Throwable $e) {
             return $this->handleError($e);
         }
@@ -44,7 +44,7 @@ class DashboardApiController extends ApiController
         try {
             $data = $this->dashboardService->getStockSummary();
 
-            return $this->successResponse($data);
+            return $this->apiOk($data);
         } catch (Throwable $e) {
             return $this->handleError($e);
         }
@@ -63,7 +63,7 @@ class DashboardApiController extends ApiController
                 $to
             );
 
-            return $this->successResponse($data);
+            return $this->apiOk($data);
         } catch (Throwable $e) {
             return $this->handleError($e);
         }
@@ -82,7 +82,7 @@ class DashboardApiController extends ApiController
                 $to
             );
 
-            return $this->successResponse($data);
+            return $this->apiOk($data);
         } catch (Throwable $e) {
             return $this->handleError($e);
         }
@@ -101,7 +101,7 @@ class DashboardApiController extends ApiController
                 $to
             );
 
-            return $this->successResponse($data);
+            return $this->apiOk($data);
         } catch (Throwable $e) {
             return $this->handleError($e);
         }
@@ -115,7 +115,7 @@ class DashboardApiController extends ApiController
         try {
             $data = $this->dashboardService->getOutstandingSummary();
 
-            return $this->successResponse($data);
+            return $this->apiOk($data);
         } catch (Throwable $e) {
             return $this->handleError($e);
         }
@@ -134,7 +134,7 @@ class DashboardApiController extends ApiController
                 $to
             );
 
-            return $this->successResponse($data);
+            return $this->apiOk($data);
         } catch (Throwable $e) {
             return $this->handleError($e);
         }
@@ -151,7 +151,7 @@ class DashboardApiController extends ApiController
 
             $data = $this->dashboardService->getExpiringBatches($days);
 
-            return $this->successResponse($data);
+            return $this->apiOk($data);
         } catch (Throwable $e) {
             return $this->handleError($e);
         }
@@ -170,7 +170,7 @@ class DashboardApiController extends ApiController
                 $to
             );
 
-            return $this->successResponse($data);
+            return $this->apiOk($data);
         } catch (Throwable $e) {
             return $this->handleError($e);
         }
@@ -193,7 +193,7 @@ class DashboardApiController extends ApiController
                 $limit
             );
 
-            return $this->successResponse($data);
+            return $this->apiOk($data);
         } catch (Throwable $e) {
             return $this->handleError($e);
         }
@@ -239,13 +239,13 @@ class DashboardApiController extends ApiController
         ]);
 
         if ($e instanceof \InvalidArgumentException) {
-            return $this->errorResponse(
+            return $this->apiFail(
                 $e->getMessage(),
                 422
             );
         }
 
-        return $this->errorResponse(
+        return $this->apiFail(
             'Gagal mengambil data dashboard.',
             500
         );

@@ -47,7 +47,7 @@ class UnitApiController extends ApiController
                 ->orderBy('name', 'ASC')
                 ->findAll($perPage, ($page - 1) * $perPage);
 
-            return $this->successResponse([
+            return $this->apiOk([
                 'items' => $items,
                 'pagination' => [
                     'current_page' => $page,
@@ -59,7 +59,7 @@ class UnitApiController extends ApiController
         } catch (Throwable $e) {
             log_message('error', '[UnitApiController::index] ' . $e->getMessage());
 
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Gagal mengambil data satuan.',
                 500
             );
@@ -75,27 +75,27 @@ class UnitApiController extends ApiController
             $satuanId = $this->validId($id);
 
             if (!$satuanId) {
-                return $this->errorResponse('ID Satuan tidak valid.', 400);
+                return $this->apiFail('ID Satuan tidak valid.', 400);
             }
 
             if ($satuanId <= 0) {
-                return $this->errorResponse('ID satuan tidak valid.', 400);
+                return $this->apiFail('ID satuan tidak valid.', 400);
             }
 
             $unit = $this->unitModel->find($satuanId);
 
             if (!$unit) {
-                return $this->errorResponse('Satuan tidak ditemukan.', 404);
+                return $this->apiFail('Satuan tidak ditemukan.', 404);
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $unit,
                 'Detail satuan berhasil diambil.'
             );
         } catch (Throwable $e) {
             log_message('error', '[UnitApiController::show] ' . $e->getMessage());
 
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Gagal mengambil detail satuan.',
                 500
             );
@@ -111,7 +111,7 @@ class UnitApiController extends ApiController
             $data = $this->getRequestData();
 
             if (empty($data)) {
-                return $this->errorResponse('Tidak ada data yang diperbarui.', 400);
+                return $this->apiFail('Tidak ada data yang diperbarui.', 400);
             }
 
 
@@ -125,7 +125,7 @@ class UnitApiController extends ApiController
                 'name' => 'required|min_length[2]|max_length[60]',
                 'abbreviation' => 'required|min_length[1]|max_length[20]',
             ])) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Validasi satuan gagal.',
                     422,
                     $this->validator->getErrors()
@@ -133,14 +133,14 @@ class UnitApiController extends ApiController
             }
 
             if ($this->unitModel->where('name', $name)->first()) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Nama satuan sudah digunakan.',
                     409
                 );
             }
 
             if ($this->unitModel->where('abbreviation', $abbreviation)->first()) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Singkatan satuan sudah digunakan.',
                     409
                 );
@@ -152,14 +152,14 @@ class UnitApiController extends ApiController
             ]);
 
             if (!$id) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Gagal menyimpan satuan.',
                     422,
                     $this->unitModel->errors()
                 );
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->unitModel->find($id),
                 'Satuan berhasil ditambahkan.',
                 201
@@ -180,27 +180,27 @@ class UnitApiController extends ApiController
             $satuanId = $this->validId($id);
 
             if (!$satuanId) {
-                return $this->errorResponse('ID Satuan tidak valid.', 400);
+                return $this->apiFail('ID Satuan tidak valid.', 400);
             }
 
             if ($satuanId <= 0) {
-                return $this->errorResponse('ID satuan tidak valid.', 400);
+                return $this->apiFail('ID satuan tidak valid.', 400);
             }
 
             $existing = $this->unitModel->find($satuanId);
 
             if (!$existing) {
-                return $this->errorResponse('Satuan tidak ditemukan.', 404);
+                return $this->apiFail('Satuan tidak ditemukan.', 404);
             }
 
             $data = $this->getRequestData();
 
             if (empty($data)) {
-                return $this->errorResponse('Tidak ada data yang diperbarui.', 400);
+                return $this->apiFail('Tidak ada data yang diperbarui.', 400);
             }
 
             if (!is_array($data) || !$data) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Data perubahan wajib diisi.',
                     400
                 );
@@ -212,7 +212,7 @@ class UnitApiController extends ApiController
             ];
 
             if (!$this->validateData($data, $rules)) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Validasi perubahan satuan gagal.',
                     422,
                     $this->validator->getErrors()
@@ -224,7 +224,7 @@ class UnitApiController extends ApiController
             foreach (['name', 'abbreviation'] as $field) {
                 if (array_key_exists($field, $data)) {
                     if (!is_string($data[$field])) {
-                        return $this->errorResponse(
+                        return $this->apiFail(
                             "Field {$field} harus berupa teks.",
                             422
                         );
@@ -235,7 +235,7 @@ class UnitApiController extends ApiController
             }
 
             if (!$update) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Tidak ada data yang diperbarui.',
                     400
                 );
@@ -248,7 +248,7 @@ class UnitApiController extends ApiController
                 ->where('id !=', $satuanId)
                 ->first()
             ) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Nama satuan sudah digunakan.',
                     409
                 );
@@ -261,21 +261,21 @@ class UnitApiController extends ApiController
                 ->where('id !=', $satuanId)
                 ->first()
             ) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Singkatan satuan sudah digunakan.',
                     409
                 );
             }
 
             if (!$this->unitModel->update($satuanId, $update)) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Gagal memperbarui satuan.',
                     422,
                     $this->unitModel->errors()
                 );
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->unitModel->find($satuanId),
                 'Satuan berhasil diperbarui.'
             );
@@ -295,26 +295,26 @@ class UnitApiController extends ApiController
             $satuanId = $this->validId($id);
 
             if (!$satuanId) {
-                return $this->errorResponse('ID Satuan tidak valid.', 400);
+                return $this->apiFail('ID Satuan tidak valid.', 400);
             }
 
             if ($satuanId <= 0) {
-                return $this->errorResponse('ID satuan tidak valid.', 400);
+                return $this->apiFail('ID satuan tidak valid.', 400);
             }
 
             if (!$this->unitModel->find($satuanId)) {
-                return $this->errorResponse('Satuan tidak ditemukan.', 404);
+                return $this->apiFail('Satuan tidak ditemukan.', 404);
             }
 
             if (!$this->unitModel->delete($satuanId)) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Gagal menghapus satuan.',
                     422,
                     $this->unitModel->errors()
                 );
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 ['id' => $satuanId],
                 'Satuan berhasil dihapus.'
             );

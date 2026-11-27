@@ -68,7 +68,7 @@ class CategoryApiController extends ApiController
                 ->get()
                 ->getResultArray();
 
-            return $this->successResponse([
+            return $this->apiOk([
                 'items' => $items,
                 'pagination' => [
                     'current_page' => $page,
@@ -87,17 +87,17 @@ class CategoryApiController extends ApiController
         $categoryId = $this->validId($id);
 
         if (!$categoryId) {
-            return $this->errorResponse('ID kategori tidak valid.', 400);
+            return $this->apiFail('ID kategori tidak valid.', 400);
         }
 
         try {
             $category = $this->categoryModel->find($categoryId);
 
             if (!$category) {
-                return $this->errorResponse('Kategori tidak ditemukan.', 404);
+                return $this->apiFail('Kategori tidak ditemukan.', 404);
             }
 
-            return $this->successResponse($category, 'Detail kategori berhasil diambil.');
+            return $this->apiOk($category, 'Detail kategori berhasil diambil.');
         } catch (Throwable $e) {
             return $this->handleException($e, 'show');
         }
@@ -108,17 +108,17 @@ class CategoryApiController extends ApiController
         $categoryId = $this->validId($id);
 
         if (!$categoryId) {
-            return $this->errorResponse('ID kategori tidak valid.', 400);
+            return $this->apiFail('ID kategori tidak valid.', 400);
         }
 
         try {
             $category = $this->categoryModel->find($categoryId);
 
             if (!$category) {
-                return $this->errorResponse('Kategori tidak ditemukan.', 404);
+                return $this->apiFail('Kategori tidak ditemukan.', 404);
             }
 
-            return $this->successResponse($category, 'Detail kategori berhasil diambil.');
+            return $this->apiOk($category, 'Detail kategori berhasil diambil.');
         } catch (Throwable $e) {
             return $this->handleException($e, 'show');
         }
@@ -129,7 +129,7 @@ class CategoryApiController extends ApiController
         $data = $this->getRequestData();
 
         if ($data === null) {
-            return $this->errorResponse('Format JSON tidak valid.', 400);
+            return $this->apiFail('Format JSON tidak valid.', 400);
         }
 
         // ✅ Validasi module
@@ -137,7 +137,7 @@ class CategoryApiController extends ApiController
         $allowedModules = ['pharmacy', 'minimarket', 'general'];
 
         if (!in_array($module, $allowedModules, true)) {
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Module kategori wajib diisi (pharmacy/minimarket/general).',
                 422
             );
@@ -147,7 +147,7 @@ class CategoryApiController extends ApiController
         $type = trim((string) ($data['type'] ?? ''));
 
         if ($type === '' || mb_strlen($type) > 30) {
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Tipe kategori wajib diisi maksimal 30 karakter.',
                 422
             );
@@ -156,7 +156,7 @@ class CategoryApiController extends ApiController
         $name = trim((string) ($data['name'] ?? ''));
 
         if (mb_strlen($name) < 2 || mb_strlen($name) > 100) {
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Nama kategori wajib diisi antara 2 sampai 100 karakter.',
                 422
             );
@@ -165,13 +165,13 @@ class CategoryApiController extends ApiController
         $description = $data['description'] ?? null;
 
         if ($description !== null && !is_string($description)) {
-            return $this->errorResponse('Deskripsi kategori harus berupa teks.', 422);
+            return $this->apiFail('Deskripsi kategori harus berupa teks.', 422);
         }
 
         $isActive = $data['is_active'] ?? 1;
 
         if (!in_array((string) $isActive, ['0', '1'], true)) {
-            return $this->errorResponse('Status aktif harus bernilai 0 atau 1.', 422);
+            return $this->apiFail('Status aktif harus bernilai 0 atau 1.', 422);
         }
 
         try {
@@ -181,7 +181,7 @@ class CategoryApiController extends ApiController
                 ->where('name', $name)
                 ->first()
             ) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Nama kategori sudah digunakan pada module ini.',
                     409
                 );
@@ -196,14 +196,14 @@ class CategoryApiController extends ApiController
             ]);
 
             if (!$id) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Gagal menyimpan kategori.',
                     422,
                     $this->categoryModel->errors()
                 );
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->categoryModel->find($id),
                 'Kategori berhasil ditambahkan.',
                 201
@@ -219,20 +219,20 @@ class CategoryApiController extends ApiController
         $categoryId = $this->validId($id);
 
         if (!$categoryId) {
-            return $this->errorResponse('ID kategori tidak valid.', 400);
+            return $this->apiFail('ID kategori tidak valid.', 400);
         }
 
         $data = $this->getRequestData();
 
         if ($data === null || $data === []) {
-            return $this->errorResponse('Data perubahan kategori wajib diisi.', 400);
+            return $this->apiFail('Data perubahan kategori wajib diisi.', 400);
         }
 
         try {
             $category = $this->categoryModel->find($categoryId);
 
             if (!$category) {
-                return $this->errorResponse('Kategori tidak ditemukan.', 404);
+                return $this->apiFail('Kategori tidak ditemukan.', 404);
             }
 
             $allowedModules = ['pharmacy', 'minimarket', 'general'];
@@ -247,7 +247,7 @@ class CategoryApiController extends ApiController
                 $module = trim((string) $data['module']);
 
                 if (!in_array($module, $allowedModules, true)) {
-                    return $this->errorResponse('Module kategori tidak valid.', 422);
+                    return $this->apiFail('Module kategori tidak valid.', 422);
                 }
 
                 $targetModule = $module;
@@ -259,7 +259,7 @@ class CategoryApiController extends ApiController
                 $type = trim((string) $data['type']);
 
                 if ($type === '' || mb_strlen($type) > 30) {
-                    return $this->errorResponse(
+                    return $this->apiFail(
                         'Tipe kategori wajib diisi maksimal 30 karakter.',
                         422
                     );
@@ -273,7 +273,7 @@ class CategoryApiController extends ApiController
                 $name = trim((string) $data['name']);
 
                 if (mb_strlen($name) < 2 || mb_strlen($name) > 100) {
-                    return $this->errorResponse(
+                    return $this->apiFail(
                         'Nama kategori wajib diisi antara 2 sampai 100 karakter.',
                         422
                     );
@@ -295,7 +295,7 @@ class CategoryApiController extends ApiController
                     ->first();
 
                 if ($duplicate) {
-                    return $this->errorResponse(
+                    return $this->apiFail(
                         'Nama kategori sudah digunakan pada module ini.',
                         409
                     );
@@ -308,7 +308,7 @@ class CategoryApiController extends ApiController
                     $data['description'] !== null &&
                     !is_string($data['description'])
                 ) {
-                    return $this->errorResponse(
+                    return $this->apiFail(
                         'Deskripsi kategori harus berupa teks.',
                         422
                     );
@@ -320,7 +320,7 @@ class CategoryApiController extends ApiController
             // Validasi status
             if (array_key_exists('is_active', $data)) {
                 if (!in_array((string) $data['is_active'], ['0', '1'], true)) {
-                    return $this->errorResponse(
+                    return $this->apiFail(
                         'Status aktif harus bernilai 0 atau 1.',
                         422
                     );
@@ -330,21 +330,21 @@ class CategoryApiController extends ApiController
             }
 
             if ($updateData === []) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Tidak ada data yang dapat diperbarui.',
                     400
                 );
             }
 
             if (!$this->categoryModel->update($categoryId, $updateData)) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Gagal memperbarui kategori.',
                     422,
                     $this->categoryModel->errors()
                 );
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->categoryModel->find($categoryId),
                 'Kategori berhasil diperbarui.'
             );
@@ -359,14 +359,14 @@ class CategoryApiController extends ApiController
         $categoryId = $this->validId($id);
 
         if (!$categoryId) {
-            return $this->errorResponse('ID kategori tidak valid.', 400);
+            return $this->apiFail('ID kategori tidak valid.', 400);
         }
 
         try {
             $category = $this->categoryModel->find($categoryId);
 
             if (!$category) {
-                return $this->errorResponse('Kategori tidak ditemukan.', 404);
+                return $this->apiFail('Kategori tidak ditemukan.', 404);
             }
 
             $db = $this->categoryModel->db;
@@ -376,17 +376,17 @@ class CategoryApiController extends ApiController
                 ->where('category_id', $categoryId)
                 ->countAllResults() > 0
             ) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Kategori tidak dapat dihapus karena masih digunakan produk.',
                     409
                 );
             }
 
             if (!$this->categoryModel->delete($categoryId)) {
-                return $this->errorResponse('Gagal menghapus kategori.', 500);
+                return $this->apiFail('Gagal menghapus kategori.', 500);
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 ['id' => $categoryId],
                 'Kategori berhasil dihapus.'
             );

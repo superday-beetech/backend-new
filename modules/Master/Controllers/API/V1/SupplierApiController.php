@@ -39,7 +39,7 @@ class SupplierApiController extends ApiController
                 $isActive !== '' &&
                 !in_array((string) $isActive, ['0', '1'], true)
             ) {
-                return $this->errorResponse('Status supplier tidak valid.', 400);
+                return $this->apiFail('Status supplier tidak valid.', 400);
             }
 
             $applyFilters = static function ($builder) use (
@@ -78,7 +78,7 @@ class SupplierApiController extends ApiController
                 ->get($perPage, ($page - 1) * $perPage)
                 ->getResultArray();
 
-            return $this->successResponse([
+            return $this->apiOk([
                 'items' => $items,
                 'pagination' => [
                     'current_page' => $page,
@@ -93,7 +93,7 @@ class SupplierApiController extends ApiController
                 '[SupplierApiController::index] ' . $e->getMessage()
             );
 
-            return $this->errorResponse('Gagal mengambil data supplier.', 500);
+            return $this->apiFail('Gagal mengambil data supplier.', 500);
         }
     }
 
@@ -106,20 +106,20 @@ class SupplierApiController extends ApiController
             $supplierId = $this->validId($id);
 
             if (!$supplierId) {
-                return $this->errorResponse('ID Supplier tidak valid.', 400);
+                return $this->apiFail('ID Supplier tidak valid.', 400);
             }
 
             if ($supplierId <= 0) {
-                return $this->errorResponse('ID supplier tidak valid.', 400);
+                return $this->apiFail('ID supplier tidak valid.', 400);
             }
 
             $supplier = $this->supplierModel->find($supplierId);
 
             if (!$supplier) {
-                return $this->errorResponse('Supplier tidak ditemukan.', 404);
+                return $this->apiFail('Supplier tidak ditemukan.', 404);
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $supplier,
                 'Detail supplier berhasil diambil.'
             );
@@ -129,7 +129,7 @@ class SupplierApiController extends ApiController
                 '[SupplierApiController::show] ' . $e->getMessage()
             );
 
-            return $this->errorResponse('Gagal mengambil detail supplier.', 500);
+            return $this->apiFail('Gagal mengambil detail supplier.', 500);
         }
     }
 
@@ -142,7 +142,7 @@ class SupplierApiController extends ApiController
             $data = $this->getRequestData();
 
             if ($data === null || $data === []) {
-                return $this->errorResponse('Data perubahan kategori wajib diisi.', 400);
+                return $this->apiFail('Data perubahan kategori wajib diisi.', 400);
             }
 
 
@@ -154,33 +154,33 @@ class SupplierApiController extends ApiController
             $address = trim((string) ($data['address'] ?? ''));
 
             if ($code === '' || strlen($code) > 30) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Kode supplier wajib diisi dan maksimal 30 karakter.',
                     422
                 );
             }
 
             if ($name === '' || mb_strlen($name) > 150) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Nama supplier wajib diisi dan maksimal 150 karakter.',
                     422
                 );
             }
 
             if (strlen($phone) > 30) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Nomor telepon maksimal 30 karakter.',
                     422
                 );
             }
 
             if (strlen($email) > 150 || ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL))) {
-                return $this->errorResponse('Format email tidak valid.', 422);
+                return $this->apiFail('Format email tidak valid.', 422);
             }
 
             // Cek duplikasi kode.
             if ($this->supplierModel->where('code', $code)->first()) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Kode supplier sudah digunakan.',
                     409
                 );
@@ -189,7 +189,7 @@ class SupplierApiController extends ApiController
             $isActive = $data['is_active'] ?? 1;
 
             if (!in_array((string) $isActive, ['0', '1'], true)) {
-                return $this->errorResponse('Status supplier tidak valid.', 422);
+                return $this->apiFail('Status supplier tidak valid.', 422);
             }
 
             $insertData = [
@@ -203,7 +203,7 @@ class SupplierApiController extends ApiController
             ];
 
             if (!$this->supplierModel->insert($insertData)) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     $this->supplierModel->errors() ?: 'Gagal menyimpan supplier.',
                     422
                 );
@@ -211,7 +211,7 @@ class SupplierApiController extends ApiController
 
             $id = (int) $this->supplierModel->getInsertID();
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->supplierModel->find($id),
                 'Supplier berhasil ditambahkan.',
                 201
@@ -222,7 +222,7 @@ class SupplierApiController extends ApiController
                 '[SupplierApiController::create] ' . $e->getMessage()
             );
 
-            return $this->errorResponse('Gagal menambahkan supplier.', 500);
+            return $this->apiFail('Gagal menambahkan supplier.', 500);
         }
     }
 
@@ -235,24 +235,24 @@ class SupplierApiController extends ApiController
             $supplierId = $this->validId($id);
 
             if (!$supplierId) {
-                return $this->errorResponse('ID Supplier tidak valid.', 400);
+                return $this->apiFail('ID Supplier tidak valid.', 400);
             }
 
 
             if ($supplierId <= 0) {
-                return $this->errorResponse('ID supplier tidak valid.', 400);
+                return $this->apiFail('ID supplier tidak valid.', 400);
             }
 
             $supplier = $this->supplierModel->find($supplierId);
 
             if (!$supplier) {
-                return $this->errorResponse('Supplier tidak ditemukan.', 404);
+                return $this->apiFail('Supplier tidak ditemukan.', 404);
             }
 
             $data = $this->getRequestData();
 
             if (empty($data)) {
-                return $this->errorResponse('Tidak ada data yang diperbarui.', 400);
+                return $this->apiFail('Tidak ada data yang diperbarui.', 400);
             }
 
             $allowedFields = [
@@ -270,14 +270,14 @@ class SupplierApiController extends ApiController
             );
 
             if (empty($updateData)) {
-                return $this->errorResponse('Tidak ada field yang valid.', 400);
+                return $this->apiFail('Tidak ada field yang valid.', 400);
             }
 
             if (array_key_exists('code', $updateData)) {
                 $code = strtoupper(trim((string) $updateData['code']));
 
                 if ($code === '' || strlen($code) > 30) {
-                    return $this->errorResponse(
+                    return $this->apiFail(
                         'Kode supplier wajib diisi dan maksimal 30 karakter.',
                         422
                     );
@@ -289,7 +289,7 @@ class SupplierApiController extends ApiController
                     ->first();
 
                 if ($duplicate) {
-                    return $this->errorResponse(
+                    return $this->apiFail(
                         'Kode supplier sudah digunakan.',
                         409
                     );
@@ -302,7 +302,7 @@ class SupplierApiController extends ApiController
                 $name = trim((string) $updateData['name']);
 
                 if ($name === '' || mb_strlen($name) > 150) {
-                    return $this->errorResponse(
+                    return $this->apiFail(
                         'Nama supplier wajib diisi dan maksimal 150 karakter.',
                         422
                     );
@@ -315,7 +315,7 @@ class SupplierApiController extends ApiController
                 $phone = trim((string) ($updateData['phone'] ?? ''));
 
                 if (strlen($phone) > 30) {
-                    return $this->errorResponse(
+                    return $this->apiFail(
                         'Nomor telepon maksimal 30 karakter.',
                         422
                     );
@@ -331,7 +331,7 @@ class SupplierApiController extends ApiController
                     strlen($email) > 150 ||
                     ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL))
                 ) {
-                    return $this->errorResponse('Format email tidak valid.', 422);
+                    return $this->apiFail('Format email tidak valid.', 422);
                 }
 
                 $updateData['email'] = $email !== '' ? $email : null;
@@ -344,7 +344,7 @@ class SupplierApiController extends ApiController
 
             if (array_key_exists('is_active', $updateData)) {
                 if (!in_array((string) $updateData['is_active'], ['0', '1'], true)) {
-                    return $this->errorResponse('Status supplier tidak valid.', 422);
+                    return $this->apiFail('Status supplier tidak valid.', 422);
                 }
 
                 $updateData['is_active'] = (int) $updateData['is_active'];
@@ -353,13 +353,13 @@ class SupplierApiController extends ApiController
             $updateData['updated_by'] = auth()->id();
 
             if (!$this->supplierModel->update($supplierId, $updateData)) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     $this->supplierModel->errors() ?: 'Gagal memperbarui supplier.',
                     422
                 );
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->supplierModel->find($supplierId),
                 'Supplier berhasil diperbarui.'
             );
@@ -369,7 +369,7 @@ class SupplierApiController extends ApiController
                 '[SupplierApiController::update] ' . $e->getMessage()
             );
 
-            return $this->errorResponse('Gagal memperbarui supplier.', 500);
+            return $this->apiFail('Gagal memperbarui supplier.', 500);
         }
     }
 
@@ -382,24 +382,24 @@ class SupplierApiController extends ApiController
             $supplierId = $this->validId($id);
 
             if (!$supplierId) {
-                return $this->errorResponse('ID Supplier tidak valid.', 400);
+                return $this->apiFail('ID Supplier tidak valid.', 400);
             }
 
             if ($supplierId <= 0) {
-                return $this->errorResponse('ID supplier tidak valid.', 400);
+                return $this->apiFail('ID supplier tidak valid.', 400);
             }
 
             $supplier = $this->supplierModel->find($supplierId);
 
             if (!$supplier) {
-                return $this->errorResponse('Supplier tidak ditemukan.', 404);
+                return $this->apiFail('Supplier tidak ditemukan.', 404);
             }
 
             if (!$this->supplierModel->delete($supplierId)) {
-                return $this->errorResponse('Gagal menghapus supplier.', 500);
+                return $this->apiFail('Gagal menghapus supplier.', 500);
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 null,
                 'Supplier berhasil dihapus.'
             );
@@ -409,7 +409,7 @@ class SupplierApiController extends ApiController
                 '[SupplierApiController::delete] ' . $e->getMessage()
             );
 
-            return $this->errorResponse('Gagal menghapus supplier.', 500);
+            return $this->apiFail('Gagal menghapus supplier.', 500);
         }
     }
 

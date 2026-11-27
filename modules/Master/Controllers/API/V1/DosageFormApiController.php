@@ -55,7 +55,7 @@ class DosageFormApiController extends ApiController
                 ->get()
                 ->getResultArray();
 
-            return $this->successResponse([
+            return $this->apiOk([
                 'items' => $items,
                 'pagination' => [
                     'current_page' => $page,
@@ -74,17 +74,17 @@ class DosageFormApiController extends ApiController
         $categoryId = $this->validId($id);
 
         if (!$categoryId) {
-            return $this->errorResponse('ID Bentuk Sediaan tidak valid.', 400);
+            return $this->apiFail('ID Bentuk Sediaan tidak valid.', 400);
         }
 
         try {
             $category = $this->dosageModel->find($categoryId);
 
             if (!$category) {
-                return $this->errorResponse('Bentuk Sediaan tidak ditemukan.', 404);
+                return $this->apiFail('Bentuk Sediaan tidak ditemukan.', 404);
             }
 
-            return $this->successResponse($category, 'Detail Bentuk Sediaan berhasil diambil.');
+            return $this->apiOk($category, 'Detail Bentuk Sediaan berhasil diambil.');
         } catch (Throwable $e) {
             return $this->handleException($e, 'show');
         }
@@ -95,17 +95,17 @@ class DosageFormApiController extends ApiController
         $categoryId = $this->validId($id);
 
         if (!$categoryId) {
-            return $this->errorResponse('ID Bentuk Sediaan tidak valid.', 400);
+            return $this->apiFail('ID Bentuk Sediaan tidak valid.', 400);
         }
 
         try {
             $category = $this->dosageModel->find($categoryId);
 
             if (!$category) {
-                return $this->errorResponse('Bentuk Sediaan tidak ditemukan.', 404);
+                return $this->apiFail('Bentuk Sediaan tidak ditemukan.', 404);
             }
 
-            return $this->successResponse($category, 'Detail Bentuk Sediaan berhasil diambil.');
+            return $this->apiOk($category, 'Detail Bentuk Sediaan berhasil diambil.');
         } catch (Throwable $e) {
             return $this->handleException($e, 'show');
         }
@@ -116,13 +116,13 @@ class DosageFormApiController extends ApiController
         $data = $this->getRequestData();
 
         if ($data === null) {
-            return $this->errorResponse('Format JSON tidak valid.', 400);
+            return $this->apiFail('Format JSON tidak valid.', 400);
         }
 
         $name = trim((string) ($data['name'] ?? ''));
 
         if (mb_strlen($name) < 2 || mb_strlen($name) > 100) {
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Nama Bentuk Sediaan wajib diisi antara 2 sampai 100 karakter.',
                 422
             );
@@ -131,7 +131,7 @@ class DosageFormApiController extends ApiController
         $isActive = $data['is_active'] ?? 1;
 
         if (!in_array((string) $isActive, ['0', '1'], true)) {
-            return $this->errorResponse('Status aktif harus bernilai 0 atau 1.', 422);
+            return $this->apiFail('Status aktif harus bernilai 0 atau 1.', 422);
         }
 
         try {
@@ -141,14 +141,14 @@ class DosageFormApiController extends ApiController
             ]);
 
             if (!$id) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Gagal menyimpan Bentuk Sediaan.',
                     422,
                     $this->dosageModel->errors()
                 );
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->dosageModel->find($id),
                 'Bentuk Sediaan berhasil ditambahkan.',
                 201
@@ -163,20 +163,20 @@ class DosageFormApiController extends ApiController
         $dosageFormId = $this->validId($id);
 
         if (!$dosageFormId) {
-            return $this->errorResponse('ID Bentuk Sediaan tidak valid.', 400);
+            return $this->apiFail('ID Bentuk Sediaan tidak valid.', 400);
         }
 
         $data = $this->getRequestData();
 
         if ($data === null || $data === []) {
-            return $this->errorResponse('Data perubahan Bentuk Sediaan wajib diisi.', 400);
+            return $this->apiFail('Data perubahan Bentuk Sediaan wajib diisi.', 400);
         }
 
         try {
             $category = $this->dosageModel->find($dosageFormId);
 
             if (!$category) {
-                return $this->errorResponse('Bentuk Sediaan tidak ditemukan.', 404);
+                return $this->apiFail('Bentuk Sediaan tidak ditemukan.', 404);
             }
 
             $updateData = [];
@@ -185,7 +185,7 @@ class DosageFormApiController extends ApiController
                 $name = trim((string) $data['name']);
 
                 if (mb_strlen($name) < 2 || mb_strlen($name) > 100) {
-                    return $this->errorResponse(
+                    return $this->apiFail(
                         'Nama Bentuk Sediaan wajib diisi antara 2 sampai 100 karakter.',
                         422
                     );
@@ -195,27 +195,27 @@ class DosageFormApiController extends ApiController
 
             if (array_key_exists('is_active', $data)) {
                 if (!in_array((string) $data['is_active'], ['0', '1'], true)) {
-                    return $this->errorResponse('Status aktif harus bernilai 0 atau 1.', 422);
+                    return $this->apiFail('Status aktif harus bernilai 0 atau 1.', 422);
                 }
 
                 $updateData['is_active'] = (int) $data['is_active'];
             }
 
             if ($updateData === []) {
-                return $this->errorResponse('Tidak ada data yang dapat diperbarui.', 400);
+                return $this->apiFail('Tidak ada data yang dapat diperbarui.', 400);
             }
 
             $updateData['id'] = $dosageFormId;
 
             if (!$this->dosageModel->update($dosageFormId, $updateData)) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Gagal memperbarui Bentuk Sediaan.',
                     422,
                     $this->dosageModel->errors()
                 );
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->dosageModel->find($dosageFormId),
                 'Bentuk Sediaan berhasil diperbarui.'
             );
@@ -229,14 +229,14 @@ class DosageFormApiController extends ApiController
         $categoryId = $this->validId($id);
 
         if (!$categoryId) {
-            return $this->errorResponse('ID Bentuk Sediaan tidak valid.', 400);
+            return $this->apiFail('ID Bentuk Sediaan tidak valid.', 400);
         }
 
         try {
             $category = $this->dosageModel->find($categoryId);
 
             if (!$category) {
-                return $this->errorResponse('Bentuk Sediaan tidak ditemukan.', 404);
+                return $this->apiFail('Bentuk Sediaan tidak ditemukan.', 404);
             }
 
             $db = $this->dosageModel->db;
@@ -246,17 +246,17 @@ class DosageFormApiController extends ApiController
                 ->where('category_id', $categoryId)
                 ->countAllResults() > 0
             ) {
-                return $this->errorResponse(
+                return $this->apiFail(
                     'Bentuk Sediaan tidak dapat dihapus karena masih digunakan produk.',
                     409
                 );
             }
 
             if (!$this->dosageModel->delete($categoryId)) {
-                return $this->errorResponse('Gagal menghapus Bentuk Sediaan.', 500);
+                return $this->apiFail('Gagal menghapus Bentuk Sediaan.', 500);
             }
 
-            return $this->successResponse(
+            return $this->apiOk(
                 ['id' => $categoryId],
                 'Bentuk Sediaan berhasil dihapus.'
             );

@@ -35,7 +35,7 @@ class ProductOptionApiController extends ApiController
             $drugClasses = $this->drugClassModel->getOptions();
             $dosageForms = $this->dosageFormModel->getOptions();
 
-            return $this->successResponse([
+            return $this->apiOk([
                 'drug_classes' => $drugClasses,
                 'dosage_forms' => $dosageForms,
             ], 'Opsi produk berhasil diambil.');
@@ -45,7 +45,7 @@ class ProductOptionApiController extends ApiController
                 '[ProductOptionApiController::index] ' . $e->getMessage()
             );
 
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Gagal mengambil opsi produk.',
                 500
             );

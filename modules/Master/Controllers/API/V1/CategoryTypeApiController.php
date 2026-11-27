@@ -29,19 +29,19 @@ class CategoryTypeApiController extends ApiController
             $module = trim((string) ($this->request->getGet('module') ?? ''));
 
             if ($module === '') {
-                return $this->errorResponse('Parameter module wajib diisi.', 400);
+                return $this->apiFail('Parameter module wajib diisi.', 400);
             }
 
             if (!in_array($module, ['pharmacy', 'minimarket', 'general'], true)) {
-                return $this->errorResponse('Module tidak valid.', 422);
+                return $this->apiFail('Module tidak valid.', 422);
             }
 
             $items = $this->typeModel->getOptionsByModule($module);
 
-            return $this->successResponse($items, 'Daftar tipe kategori berhasil diambil.');
+            return $this->apiOk($items, 'Daftar tipe kategori berhasil diambil.');
         } catch (Throwable $e) {
             log_message('error', '[CategoryTypeApiController::index] ' . $e->getMessage());
-            return $this->errorResponse('Gagal mengambil tipe kategori.', 500);
+            return $this->apiFail('Gagal mengambil tipe kategori.', 500);
         }
     }
 }

@@ -77,7 +77,7 @@ class CustomerApiPosController extends ApiController
         $customerId = $this->validId($id);
 
         if (!$customerId) {
-            return $this->errorResponse('ID customer tidak valid.', 400);
+            return $this->apiFail('ID customer tidak valid.', 400);
         }
 
         $customer = $this->db

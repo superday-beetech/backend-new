@@ -41,7 +41,7 @@ class PermissionsController extends ApiController
                 (string) ($this->request->getGet('search') ?? '')
             );
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->permissionService->getPaginated(
                     $page,
                     $perPage,
@@ -55,7 +55,7 @@ class PermissionsController extends ApiController
                 '[RBAC Permissions][index] ' . $e->getMessage()
             );
 
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Gagal memuat daftar permission.',
                 500
             );
@@ -70,20 +70,20 @@ class PermissionsController extends ApiController
         $id = (int) $id;
 
         if ($id < 1) {
-            return $this->errorResponse(
+            return $this->apiFail(
                 'ID permission tidak valid.',
                 400
             );
         }
 
         try {
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->permissionService->find($id),
                 'Detail permission berhasil dimuat.'
             );
         } catch (RuntimeException $e) {
             if ($e->getMessage() === 'Permission tidak ditemukan.') {
-                return $this->errorResponse(
+                return $this->apiFail(
                     $e->getMessage(),
                     404
                 );
@@ -94,7 +94,7 @@ class PermissionsController extends ApiController
                 '[RBAC Permissions][show] ' . $e->getMessage()
             );
 
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Gagal memuat detail permission.',
                 500
             );
@@ -104,7 +104,7 @@ class PermissionsController extends ApiController
                 '[RBAC Permissions][show] ' . $e->getMessage()
             );
 
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Gagal memuat detail permission.',
                 500
             );
@@ -119,7 +119,7 @@ class PermissionsController extends ApiController
         $data = $this->request->getJSON(true);
 
         if (! is_array($data)) {
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Body JSON tidak valid.',
                 400
             );
@@ -128,7 +128,7 @@ class PermissionsController extends ApiController
         try {
             $id = $this->permissionService->create($data);
 
-            return $this->successResponse(
+            return $this->apiOk(
                 ['id' => $id],
                 'Permission berhasil ditambahkan.',
                 201
@@ -140,14 +140,14 @@ class PermissionsController extends ApiController
                 ? 409
                 : 422;
 
-            return $this->errorResponse($message, $code);
+            return $this->apiFail($message, $code);
         } catch (Throwable $e) {
             log_message(
                 'error',
                 '[RBAC Permissions][create] ' . $e->getMessage()
             );
 
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Gagal menambahkan permission.',
                 500
             );
@@ -163,7 +163,7 @@ class PermissionsController extends ApiController
         $id = (int) $id;
 
         if ($id < 1) {
-            return $this->errorResponse(
+            return $this->apiFail(
                 'ID permission tidak valid.',
                 400
             );
@@ -172,7 +172,7 @@ class PermissionsController extends ApiController
         $data = $this->request->getJSON(true);
 
         if (! is_array($data)) {
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Body JSON tidak valid.',
                 400
             );
@@ -181,7 +181,7 @@ class PermissionsController extends ApiController
         try {
             $this->permissionService->update($id, $data);
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->permissionService->find($id),
                 'Permission berhasil diperbarui.'
             );
@@ -192,14 +192,14 @@ class PermissionsController extends ApiController
                 ? 404
                 : 422;
 
-            return $this->errorResponse($message, $code);
+            return $this->apiFail($message, $code);
         } catch (Throwable $e) {
             log_message(
                 'error',
                 '[RBAC Permissions][update] ' . $e->getMessage()
             );
 
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Gagal memperbarui permission.',
                 500
             );
@@ -215,7 +215,7 @@ class PermissionsController extends ApiController
         $id = (int) $id;
 
         if ($id < 1) {
-            return $this->errorResponse(
+            return $this->apiFail(
                 'ID permission tidak valid.',
                 400
             );
@@ -224,7 +224,7 @@ class PermissionsController extends ApiController
         try {
             $this->permissionService->delete($id);
 
-            return $this->successResponse(
+            return $this->apiOk(
                 ['id' => $id],
                 'Permission berhasil dihapus.'
             );
@@ -232,7 +232,7 @@ class PermissionsController extends ApiController
             $message = $e->getMessage();
 
             if ($message === 'Permission tidak ditemukan.') {
-                return $this->errorResponse($message, 404);
+                return $this->apiFail($message, 404);
             }
 
             $code = str_contains(
@@ -240,14 +240,14 @@ class PermissionsController extends ApiController
                 'masih digunakan'
             ) ? 409 : 422;
 
-            return $this->errorResponse($message, $code);
+            return $this->apiFail($message, $code);
         } catch (Throwable $e) {
             log_message(
                 'error',
                 '[RBAC Permissions][delete] ' . $e->getMessage()
             );
 
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Gagal menghapus permission.',
                 500
             );

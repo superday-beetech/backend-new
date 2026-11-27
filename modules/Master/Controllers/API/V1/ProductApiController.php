@@ -40,7 +40,7 @@ class ProductApiController extends ApiController
             $filters['is_active'] !== '' &&
             !in_array((string) $filters['is_active'], ['0', '1'], true)
         ) {
-            return $this->errorResponse('Status produk tidak valid.', 400);
+            return $this->apiFail('Status produk tidak valid.', 400);
         }
 
         $page = max(1, (int) ($this->request->getGet('page') ?? 1));
@@ -49,7 +49,7 @@ class ProductApiController extends ApiController
         try {
             $result = $this->catalogService->list($filters, $page, $perPage);
 
-            return $this->successResponse([
+            return $this->apiOk([
                 'items' => $result['items'],
                 'pagination' => [
                     'current_page' => $page,
@@ -72,11 +72,11 @@ class ProductApiController extends ApiController
         $productId = $this->validId($id);
 
         if (!$productId) {
-            return $this->errorResponse('ID product tidak valid.', 400);
+            return $this->apiFail('ID product tidak valid.', 400);
         }
 
         try {
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->catalogService->detail($productId),
                 'Detail produk berhasil diambil.'
             );
@@ -94,7 +94,7 @@ class ProductApiController extends ApiController
         $data = $this->getRequestData();
 
         if (!is_array($data)) {
-            return $this->errorResponse('Format request tidak valid.', 400);
+            return $this->apiFail('Format request tidak valid.', 400);
         }
 
         $rules = [
@@ -110,7 +110,7 @@ class ProductApiController extends ApiController
         ];
 
         if (!$this->validateData($data, $rules)) {
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Validasi produk gagal.',
                 422,
                 $this->validator->getErrors()
@@ -118,7 +118,7 @@ class ProductApiController extends ApiController
         }
 
         try {
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->catalogService->create($data, (int) auth()->id()),
                 'Produk berhasil dibuat.',
                 201
@@ -137,7 +137,7 @@ class ProductApiController extends ApiController
         $data = $this->getRequestData();
 
         if (!is_array($data) || !$data) {
-            return $this->errorResponse('Data perubahan wajib diisi.', 400);
+            return $this->apiFail('Data perubahan wajib diisi.', 400);
         }
 
         $rules = [
@@ -152,7 +152,7 @@ class ProductApiController extends ApiController
         ];
 
         if (!$this->validateData($data, $rules)) {
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Validasi perubahan produk gagal.',
                 422,
                 $this->validator->getErrors()
@@ -160,7 +160,7 @@ class ProductApiController extends ApiController
         }
 
         try {
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->catalogService->update((int) $id, $data, (int) auth()->id()),
                 'Produk berhasil diperbarui.'
             );
@@ -179,12 +179,12 @@ class ProductApiController extends ApiController
             $productId = $this->validId($id);
 
             if (!$productId) {
-                return $this->errorResponse('ID product tidak valid.', 400);
+                return $this->apiFail('ID product tidak valid.', 400);
             }
 
             $this->catalogService->delete($productId);
 
-            return $this->successResponse(
+            return $this->apiOk(
                 ['id' => $productId],
                 'Produk berhasil dihapus.'
             );
@@ -203,7 +203,7 @@ class ProductApiController extends ApiController
         try {
             $units = (new ProductUnitService())->getProductUnits($id);
 
-            return $this->successResponse(
+            return $this->apiOk(
                 $units,
                 'Data satuan produk berhasil diambil.'
             );
@@ -228,9 +228,9 @@ class ProductApiController extends ApiController
             $attrId = $this->validId($id);
 
             if (!$attrId) {
-                return $this->errorResponse('ID attributes tidak valid.', 400);
+                return $this->apiFail('ID attributes tidak valid.', 400);
             }
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->catalogService->attributes($attrId),
                 'Atribut produk berhasil diambil.'
             );
@@ -249,9 +249,9 @@ class ProductApiController extends ApiController
             $priceId = $this->validId($id);
 
             if (!$priceId) {
-                return $this->errorResponse('ID Harga tidak valid.', 400);
+                return $this->apiFail('ID Harga tidak valid.', 400);
             }
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->catalogService->prices($priceId),
                 'Harga produk berhasil diambil.'
             );
@@ -267,7 +267,7 @@ class ProductApiController extends ApiController
     public function uploadImage()
     {
         try {
-            return $this->successResponse(
+            return $this->apiOk(
                 $this->imageService->upload($this->request->getFile('image')),
                 'Gambar berhasil diunggah.',
                 201
@@ -288,7 +288,7 @@ class ProductApiController extends ApiController
 
             $this->imageService->delete((string) ($data['filename'] ?? ''));
 
-            return $this->successResponse(null, 'Gambar sementara dihapus.');
+            return $this->apiOk(null, 'Gambar sementara dihapus.');
         } catch (Throwable $e) {
             return $this->handleException($e, 'Gagal menghapus gambar.');
         }
@@ -311,7 +311,7 @@ class ProductApiController extends ApiController
         );
 
         if ($categoryId <= 0) {
-            return $this->errorResponse(
+            return $this->apiFail(
                 'Kategori produk wajib dipilih.',
                 422
             );
@@ -323,7 +323,7 @@ class ProductApiController extends ApiController
                 $dosageForm
             );
 
-            return $this->successResponse(
+            return $this->apiOk(
                 ['sku' => $sku],
                 'SKU berhasil dibuat.'
             );

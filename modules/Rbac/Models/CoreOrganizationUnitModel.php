@@ -10,8 +10,8 @@ namespace Modules\Rbac\Models;
  * @deprecated Use Modules\Core\Models\OrganizationUnitModel.
  * **/
 
-use Modules\Core\Models\OrganizationModel as BaseOrganizationModel;
+use Modules\Core\Models\OrganizationUnitModel;
 
-class CoreOrganizationModel extends BaseOrganizationModel
+class CoreOrganizationUnitModel extends OrganizationUnitModel
 {
 }
