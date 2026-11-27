@@ -16,6 +16,7 @@ use App\Services\Storage\StorageManager;
 use App\Services\Storage\StorageMetadataService;
 use App\Services\Storage\StorageService;
 use App\Services\Storage\StorageValidationService;
+use Modules\Core\Services\OrganizationContextService;
 
 /**
  * Services Configuration file.
@@ -73,6 +74,17 @@ class Services extends BaseService
         }
 
         return new AccessControlService();
+    }
+
+    /** Shared active organization context for all ERP modules. */
+    public static function organizationContext(
+        bool $getShared = true
+    ): OrganizationContextService {
+        if ($getShared) {
+            return static::getSharedInstance('organizationContext');
+        }
+
+        return new OrganizationContextService();
     }
 
     /* public static function storage(bool $getShared = true): StorageFacade
