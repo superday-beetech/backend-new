@@ -12,6 +12,16 @@ use RuntimeException;
 
 class AccessControlService
 {
+    /**
+     * Environment yang boleh melonggarkan pengecekan `active` flag.
+     *
+     * Harus konsisten dengan DynamicRouterBase::RELAXABLE_ENVIRONMENTS.
+     * Di production, `active` SELALU dicek.
+     *
+     * @var list<string>
+     */
+    private const RELAXABLE_ENVIRONMENTS = ['development', 'testing'];
+
     protected BaseConnection $db;
 
     /**
@@ -24,14 +34,6 @@ class AccessControlService
     private array $permissionNameCache = [];
     private AuthPolicy $policy;
 
-    private const CACHE_PROPERTIES = [
-    'activeUserCache',
-    'superadminCache',
-    'effectivePermissionsCache',
-    'directPermissionsCache',
-    'permissionNameCache',
-];
-
     public function __construct(
         ?BaseConnection $db = null,
         ?AuthPolicy $policy = null
@@ -42,6 +44,15 @@ class AccessControlService
 
     /**
      * Memastikan pengguna ada dan belum dihapus.
+     *
+     * Aturan:
+     * - User harus ada di tabel `users` dan `deleted_at IS NULL`.
+     * - `status` tidak boleh 'banned' (semua environment).
+     * - `active` harus 1, KECUALI di environment relaxable
+     *   (development/testing) di mana flag ini diabaikan
+     *   agar test tidak perlu set `active = 1` secara eksplisit.
+     *
+     * Di production, `active` SELALU dicek (fail-closed).
      */
     public function isActiveUser(int $userId): bool
     {
@@ -60,14 +71,32 @@ class AccessControlService
             ->get()
             ->getRowArray();
 
-        $isActive = $row !== null && ($row['status'] ?? null) !== 'banned';
-        if ($isActive && ENVIRONMENT !== 'development') {
-            $isActive = (int) ($row['active'] ?? 0) === 1;
+        if ($row === null) {
+            return $this->activeUserCache[$userId] = false;
         }
 
-        return $this->activeUserCache[$userId] = $isActive;
+        // `status` selalu dicek, semua environment.
+        if (($row['status'] ?? null) === 'banned') {
+            return $this->activeUserCache[$userId] = false;
+        }
+
+        // `active` dicek di production, diabaikan di development/testing.
+        if (! $this->isRelaxableEnvironment()) {
+            if ((int) ($row['active'] ?? 0) !== 1) {
+                return $this->activeUserCache[$userId] = false;
+            }
+        }
+
+        return $this->activeUserCache[$userId] = true;
     }
 
+    /**
+     * Apakah environment saat ini relaxable untuk pengecekan `active`.
+     */
+    private function isRelaxableEnvironment(): bool
+    {
+        return in_array(ENVIRONMENT, self::RELAXABLE_ENVIRONMENTS, true);
+    }
 
     /**
      * Memeriksa keanggotaan grup superadmin.
@@ -136,6 +165,7 @@ class AccessControlService
             ->where('agu.user_id', $userId)
             ->get()
             ->getResultArray();
+
         $permissions = [];
 
         foreach (array_merge($directRows, $groupRows) as $row) {
@@ -162,8 +192,6 @@ class AccessControlService
     /**
      * Semua permission yang diwajibkan harus terpenuhi.
      */
-
-
     public function hasAllPermissions(int $userId, array $requiredPermissions): bool
     {
         if ($userId <= 0 || $requiredPermissions === []) {
@@ -197,7 +225,6 @@ class AccessControlService
 
         return true;
     }
-
 
     /**
      * Memeriksa permission pengguna, termasuk pola wildcard.
@@ -306,16 +333,6 @@ class AccessControlService
         return $this->directPermissionsCache[$userId];
     }
 
-    /* public function clearCache(?int $userId = null): void
-    {
-        foreach (self::CACHE_PROPERTIES as $prop) {
-            if ($userId === null) {
-                $this->{$prop} = [];
-            } else {
-                unset($this->{$prop}[$userId]);
-            }
-        }
-    } */
     public function clearCache(?int $userId = null): void
     {
         if ($userId === null) {

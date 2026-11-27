@@ -22,6 +22,7 @@ use Psr\Log\LoggerInterface;
 use ReflectionException;
 use ReflectionMethod;
 use RuntimeException;
+use Throwable;
 
 abstract class DynamicRouterBase extends Controller
 {
@@ -261,6 +262,16 @@ abstract class DynamicRouterBase extends Controller
 
         /*
          * 5. Method discovery/static allowlist — wajib semua environment.
+         *
+         * CATATAN: diagnoseMethod() dipanggil TANPA $httpVerb.
+         * Artinya hanya discovery + static allowlist yang dicek di sini.
+         * Pemeriksaan Route Registry (termasuk HTTP verb) dilakukan oleh
+         * AccessChecker di step 8.
+         *
+         * Jika Core.checkAccess dimatikan (hanya boleh di development/testing),
+         * maka registry TIDAK dicek sama sekali. Ini adalah fail-open yang
+         * disengaja untuk development, dan TIDAK berlaku di production
+         * (lihat isSecurityFeatureEnabled()).
          */
         $methodDecision = $this->methodPolicy->diagnoseMethod(
             $controller,
@@ -299,6 +310,9 @@ abstract class DynamicRouterBase extends Controller
 
         /*
          * 6. Rate limiting.
+         *
+         * Tetap melindungi endpoint publik seperti login
+         * dan register sebelum controller dijalankan.
          */
         if (
             $this->rateLimitEnabled
@@ -322,6 +336,20 @@ abstract class DynamicRouterBase extends Controller
 
         /*
          * 8. Authentication dan authorization.
+         *
+         * AccessChecker adalah pemeriksaan utama:
+         * - Endpoint terdaftar
+         * - is_discovered / is_routable / is_allowed
+         * - HTTP verb terdaftar
+         * - Public endpoint policy
+         * - Authentication
+         * - Status akun
+         * - Bypass group
+         * - Permission override
+         * - Route Registry permission
+         *
+         * Refactor AccessChecker menangani RuntimeException dari
+         * AuthenticationResolver secara internal (tidak crash).
          */
         if ($checkAccess) {
             $decision = $this->accessChecker->diagnoseAccess($endpoint);
@@ -335,15 +363,18 @@ abstract class DynamicRouterBase extends Controller
         }
 
         /*
-         * 9. HTTP verb policy tambahan.
-         */
+ * 9. HTTP verb policy tambahan.
+ *
+ * AccessChecker (step 8) sudah memvalidasi registry termasuk HTTP verb.
+ * HttpVerbPolicy di sini adalah defense-in-depth: registry dicek ulang
+ * (cache per request membuat ini murah) + konfigurasi lokal diperiksa.
+ *
+ * Exclusion tetap dihormati: exclusion hanya melewati pemeriksaan
+ * tambahan ini, bukan validasi HTTP verb di AccessChecker.
+ */
         if (
             $checkHttpVerbs
             && ! $this->isHttpVerbExcluded($endpoint)
-            && (
-                ! $checkAccess
-                || array_key_exists($endpoint, $this->allowedHttpVerbs)
-            )
             && ! $this->checkHttpVerb($endpoint)
         ) {
             $this->logRejection(
@@ -362,7 +393,6 @@ abstract class DynamicRouterBase extends Controller
                 $endpoint
             );
         }
-
         /*
          * 10. Before hooks.
          */
@@ -397,269 +427,6 @@ abstract class DynamicRouterBase extends Controller
                 $params,
                 $result
             );
-        }
-
-        return $result;
-    }
-
-
-    public function routeBanyakKomenHapusEnviromenyPadhalGuaJugaTau(
-        string $seg1 = '',
-        ?string $seg2 = null,
-        mixed ...$params
-    ): mixed {
-        /*
-         * 1. Pastikan seluruh komponen router sudah siap.
-         */
-        $this->assertRouterInitialized();
-
-        /*
-        * 2. Periksa status module/router.
-        */
-        if (! $this->enabled && ! $this->isSuperadmin()) {
-            throw PageNotFoundException::forPageNotFound();
-        }
-
-        /*
-         * 3. Validasi path policy.
-         */
-        $path = trim($this->request->getUri()->getPath(), '/');
-        $policy = $this->rbacPolicy;
-
-        if (strlen($path) > $policy->maxPathLength) {
-            $this->rejectAsNotFound(
-                'path_policy',
-                'PATH_TOO_LONG',
-                ['length' => strlen($path)]
-            );
-        }
-
-        $segments = $path === '' ? [] : explode('/', $path);
-
-        if (count($segments) > $policy->maxSegments) {
-            $this->rejectAsNotFound(
-                'path_policy',
-                'TOO_MANY_SEGMENTS',
-                ['count' => count($segments)]
-            );
-        }
-
-
-
-        /*
-         * 4. Resolve controller, method, dan parameter.
-         */
-        // Di route(), setelah resolve:
-        [$controller, $method, $params] = $this->resolveControllerAndMethod($seg1, $seg2, $params);
-
-        $params = $this->normalizeRouteParams($params);
-
-        /*
-         * 5. Security pipeline production.
-         */
-        if (ENVIRONMENT === 'production') {
-
-            /*
-             * 5.1 Controller allowlist.
-             */
-            if (! in_array($controller, $this->allowedControllers, true)) {
-                $this->rejectAsNotFound(
-                    'controller_policy',
-                    'CONTROLLER_NOT_ALLOWED',
-                    ['controller' => $controller]
-                );
-            }
-
-            /*
-             * 5.2 Method discovery dan static allowlist.
-             *
-             * HTTP verb tidak dikirim ke MethodPolicy.
-             * Pemeriksaan Route Registry ditangani AccessChecker.
-             */
-            $methodDecision = $this->methodPolicy->diagnoseMethod(
-                $controller,
-                $method
-            );
-
-            if (! $methodDecision['allowed']) {
-                $this->rejectAsNotFound(
-                    'method_policy',
-                    $methodDecision['reason'],
-                    [
-                        'controller' => $controller,
-                        'method'     => $method,
-                    ]
-                );
-            }
-
-            $resolved = $this->methodPolicy->resolveDiscoveredMethod(
-                $controller,
-                $method
-            );
-
-            if ($resolved === null) {
-                $this->rejectAsNotFound(
-                    'method_policy',
-                    'METHOD_NOT_DISCOVERED',
-                    [
-                        'controller' => $controller,
-                        'method'     => $method,
-                    ]
-                );
-            }
-
-            $method = $resolved;
-            $endpoint = $controller . '::' . $method;
-
-            /*
-             * 5.3 Rate limiting.
-             *
-             * Tetap melindungi endpoint publik seperti login
-             * dan register sebelum controller dijalankan.
-             */
-            if (
-                $this->rateLimitEnabled
-                && ! $this->checkRateLimit($endpoint)
-            ) {
-                return $this->handleTooManyRequests($endpoint);
-            }
-
-            /*
-             * 5.4 Ambil security settings.
-             *
-             * Production tetap fail-closed melalui
-             * isSecurityFeatureEnabled().
-             */
-            $checkAccess = $this->isSecurityFeatureEnabled(
-                'Core.checkAccess'
-            );
-
-            $checkHttpVerbs = $this->isSecurityFeatureEnabled(
-                'Core.httpVerbs'
-            );
-
-            /*
-             * 5.5 Authentication dan authorization.
-             *
-             * AccessChecker merupakan pemeriksaan utama:
-             * - Endpoint terdaftar
-             * - is_discovered
-             * - is_routable
-             * - is_allowed
-             * - HTTP verb terdaftar
-             * - Public endpoint policy
-             * - Authentication
-             * - Status akun
-             * - Bypass group
-             * - Permission override
-             * - Route Registry permission
-             */
-            if ($checkAccess) {
-                $decision = $this->accessChecker->diagnoseAccess(
-                    $endpoint
-                );
-
-                if (! $decision['allowed']) {
-                    $this->auditDenied($endpoint, $decision);
-
-                    return $this->routerResponseHandler
-                        ->handleAccessDecision($decision);
-                }
-            }
-
-            /*
-             * 5.6 HTTP verb tambahan dari RouterConfig.
-             *
-             * Jika AccessChecker aktif:
-             * - Validasi registry sudah dilakukan.
-             * - HttpVerbPolicy hanya memeriksa konfigurasi lokal
-             *   jika endpoint memilikinya.
-             *
-             * Jika AccessChecker tidak aktif:
-             * - HttpVerbPolicy tetap melakukan pemeriksaan.
-             * - Fallback registry tetap tersedia.
-             *
-             * Exclusion hanya melewati pemeriksaan tambahan ini,
-             * bukan validasi HTTP verb di AccessChecker.
-             */
-            if (
-                $checkHttpVerbs
-                && ! $this->isHttpVerbExcluded($endpoint)
-                && (
-                    ! $checkAccess
-                    || array_key_exists(
-                        $endpoint,
-                        $this->allowedHttpVerbs
-                    )
-                )
-                && ! $this->checkHttpVerb($endpoint)
-            ) {
-                $this->logRejection(
-                    'http_verb',
-                    'HTTP_VERB_NOT_ALLOWED',
-                    [
-                        'endpoint' => $endpoint,
-                        'verb'     => strtoupper(
-                            $this->request->getMethod()
-                        ),
-                    ]
-                );
-
-                return $this->handleMethodNotAllowed(
-                    'HTTP_VERB_NOT_ALLOWED',
-                    null,
-                    null,
-                    $endpoint
-                );
-            }
-
-            /*
-             * 5.7 Before route hooks.
-             */
-            foreach ($this->beforeRouteHooks as $hook) {
-                $this->assertHookCallable(
-                    $hook,
-                    'beforeRouteHooks'
-                );
-
-                $override = $hook(
-                    $controller,
-                    $method,
-                    $params
-                );
-
-                if ($override instanceof ResponseInterface) {
-                    return $override;
-                }
-            }
-        }
-
-        /*
-         * 6. Jalankan controller.
-         */
-        $result = $this->runController(
-            $controller,
-            $method,
-            $params
-        );
-
-        /*
-         * 7. After route hooks.
-         */
-        if (ENVIRONMENT === 'production') {
-            foreach ($this->afterRouteHooks as $hook) {
-                $this->assertHookCallable(
-                    $hook,
-                    'afterRouteHooks'
-                );
-
-                $hook(
-                    $controller,
-                    $method,
-                    $params,
-                    $result
-                );
-            }
         }
 
         return $result;
@@ -705,7 +472,6 @@ abstract class DynamicRouterBase extends Controller
         return $params;
     }
 
-
     protected function auditDenied(string $endpoint, array $decision): void
     {
         $context = [
@@ -723,13 +489,11 @@ abstract class DynamicRouterBase extends Controller
         if (($decision['status'] ?? 0) !== 401) {
             try {
                 \CodeIgniter\Events\Events::trigger('rbac_denied', $context);
-            } catch (\Throwable $e) {
+            } catch (Throwable $e) {
                 log_message('error', 'Event audit gagal: ' . $e->getMessage());
             }
         }
     }
-
-
 
     /**
      * Setting keamanan: default AKTIF (fail-closed).
@@ -883,7 +647,6 @@ abstract class DynamicRouterBase extends Controller
 
     public function resolveControllerAndMethod(string $seg1 = '', ?string $seg2 = null, array $params = []): array
     {
-
         return $this->routeResolver->resolveControllerAndMethod($seg1, $seg2, $params);
     }
 
@@ -912,9 +675,22 @@ abstract class DynamicRouterBase extends Controller
         return $this->authenticationResolver->isAuthenticated();
     }
 
+    /**
+     * @return object|null
+     */
     protected function getAuthenticatedUser()
     {
-        return $this->authenticationResolver->getAuthenticatedUser();
+        try {
+            return $this->authenticationResolver->getAuthenticatedUser();
+        } catch (Throwable $e) {
+            // AuthenticationResolver hanya melempar untuk programmer error.
+            // Jangan crash request hanya karena pemanggil ini.
+            log_message('error', 'DynamicRouter: getAuthenticatedUser() melempar: {error}', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 
     protected function checkAccess(string $endpoint): bool
@@ -941,8 +717,6 @@ abstract class DynamicRouterBase extends Controller
     {
         return $this->rateLimiter->safeCacheKey($key);
     }
-
-
 
     protected function getMethodReflection(string $className, string $method): ?ReflectionMethod
     {
@@ -1095,9 +869,10 @@ abstract class DynamicRouterBase extends Controller
 
         /*
          * 6. Normalisasi parameter route.
+         *
+         * normalizeRouteParams() di route() sudah memastikan list positional
+         * string. array_values() tidak lagi diperlukan di sini (K11).
          */
-        $params = array_values($params);
-
         if (! $this->paramsMatchSignature($reflection, $params)) {
             $this->logRejection(
                 'run_controller',

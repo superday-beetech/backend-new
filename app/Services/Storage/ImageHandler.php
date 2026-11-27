@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Modules\Core\Services\Storage;
+namespace App\Services\Storage;
 
 use Config\Services;
 use RuntimeException;

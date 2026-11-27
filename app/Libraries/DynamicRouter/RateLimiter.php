@@ -6,7 +6,6 @@ namespace App\Libraries\DynamicRouter;
 
 use CodeIgniter\Cache\CacheInterface;
 use CodeIgniter\HTTP\RequestInterface;
-use Modules\Core\Exceptions\DomainException;
 use Throwable;
 
 /**
@@ -20,6 +19,8 @@ use Throwable;
  *     - Endpoint dengan fail_closed=true (default untuk auth) -> DITOLAK.
  *     - Endpoint lain -> DIIZINKAN (fail-open) agar gangguan cache tidak melumpuhkan
  *       seluruh aplikasi.
+ * - AuthenticationResolver::getAuthenticatedUser() dapat melempar RuntimeException
+ *   pada programmer error. Rate limiter TIDAK boleh crash karena hal ini.
  */
 class RateLimiter
 {
@@ -61,16 +62,22 @@ class RateLimiter
         $minutes = (int) ($policy['minutes'] ?? 1);
 
         if ($limit < 1 || $minutes < 1) {
+            // Konfigurasi tidak valid: fail-closed agar tidak ada
+            // endpoint tanpa proteksi rate limit karena salah config.
+            log_message(
+                'warning',
+                'RateLimiter: konfigurasi tidak valid untuk endpoint {endpoint} (limit={limit}, minutes={minutes}).',
+                [
+                    'endpoint' => $endpoint,
+                    'limit'    => $limit,
+                    'minutes'  => $minutes,
+                ]
+            );
+
             return false;
         }
 
-        $user = $this->authenticationResolver
-            ? $this->authenticationResolver->getAuthenticatedUser()
-            : null;
-
-        $identity = $user
-            ? 'user:' . $user->id
-            : 'ip:' . $this->request->getIPAddress();
+        $identity = $this->resolveIdentity();
 
         $window = $minutes * 60;
         $bucket = intdiv(time(), $window);
@@ -102,6 +109,41 @@ class RateLimiter
     }
 
     /**
+     * Resolusi identitas rate limit.
+     *
+     * AuthenticationResolver::getAuthenticatedUser() dapat melempar
+     * RuntimeException pada programmer error (ArgumentCountError/TypeError).
+     * Rate limiter TIDAK boleh crash karena hal ini — fallback ke identitas
+     * IP, dan log error agar tetap terdeteksi.
+     */
+    private function resolveIdentity(): string
+    {
+        $user = null;
+
+        if ($this->authenticationResolver !== null) {
+            try {
+                $user = $this->authenticationResolver->getAuthenticatedUser();
+            } catch (Throwable $e) {
+                // Programmer error — jangan crash request hanya karena
+                // rate limiter. Fallback ke IP + log.
+                log_message(
+                    'error',
+                    'RateLimiter: AuthenticationResolver melempar saat resolve user: {error}',
+                    ['error' => $e->getMessage()]
+                );
+
+                $user = null;
+            }
+        }
+
+        if ($user !== null && isset($user->id) && (int) $user->id > 0) {
+            return 'user:' . (int) $user->id;
+        }
+
+        return 'ip:' . ($this->request->getIPAddress() ?: 'unknown');
+    }
+
+    /**
      * Tentukan apakah endpoint harus fail-closed saat cache error.
      *
      * Prioritas:
@@ -128,7 +170,11 @@ class RateLimiter
             return $value;
         }
 
-        throw DomainException::notFound(
+        // Bukan "not found" — ini kegagalan backend cache yang tidak
+        // mendukung increment atomik. Gunakan RuntimeException agar
+        // semantiknya benar dan tidak tertukar dengan DomainException
+        // untuk resource yang tidak ditemukan.
+        throw new \RuntimeException(
             'Cache backend tidak menyediakan increment atomik.'
         );
     }

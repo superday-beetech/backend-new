@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Libraries\DynamicRouter;
 
+use App\Libraries\DynamicRouter\Exceptions\AmbiguousOverrideException;
+use App\Libraries\DynamicRouter\Exceptions\InvalidPolicyException;
 use CodeIgniter\HTTP\RequestInterface;
 use Config\Rbac;
 use Throwable;
@@ -11,425 +13,48 @@ use Throwable;
 class AccessChecker
 {
     private Rbac $policy;
+    private RequestPath $requestPath;
+    private PatternMatcher $matcher;
+    private GroupMembershipResolver $groupResolver;
+
+    /**
+     * Cache user per instance — AuthenticationResolver sudah memoized,
+     * tapi kita simpan juga agar tidak memanggil method-nya berulang.
+     */
+    private bool $userResolved = false;
+    private ?object $resolvedUser = null;
 
     public function __construct(
         private RequestInterface $request,
         private AuthenticationResolver $authenticationResolver,
         private string $module,
         private array $publicMethods = [],
-        ?Rbac $policy = null
+        ?Rbac $policy = null,
+        ?PatternMatcher $matcher = null,
+        ?GroupMembershipResolver $groupResolver = null,
     ) {
-        $this->policy = $policy ?? config(Rbac::class);
+        $this->policy        = $policy ?? config(Rbac::class);
+        $this->requestPath   = RequestPath::fromRequest($request);
+        $this->matcher       = $matcher ?? new PatternMatcher();
+        $this->groupResolver = $groupResolver ?? new DbGroupMembershipResolver();
     }
 
     /**
-     * Mendiagnosis akses endpoint.
-     *
-     * @return array{
-     *     allowed: bool,
-     *     reason: string,
-     *     message: string,
-     *     status: int
-     * }
+     * @return array{allowed: bool, reason: string, message: string, status: int}
      */
-
-
     public function diagnoseAccess(string $endpoint): array
     {
-        $endpoint = trim($endpoint);
-
-        if ($endpoint === '') {
-            log_message('warning', 'AccessChecker: endpoint kosong pada diagnoseAccess().');
-
-            return $this->decision(
-                false,
-                'invalid_endpoint',
-                'Endpoint yang diminta tidak valid.',
-                404
-            );
-        }
-
-        $httpVerb = strtoupper($this->request->getMethod());
-        // 1. Periksa Route Registry.
-        try {
-            $registry = service('routeRegistryAccess');
-            $info = $registry->inspectEndpoint($this->module, $endpoint, $httpVerb);
-        } catch (\Throwable $e) {
-            log_message(
-                'error',
-                'Gagal memeriksa route registry. Endpoint: {endpoint}; Error: {error}',
-                [
-                    'endpoint' => $endpoint,
-                    'error'    => $e->getMessage(),
-                ]
-            );
-
-            return $this->decision(
-                false,
-                'route_registry_error',
-                'Status fitur tidak dapat diverifikasi. Silakan coba kembali atau hubungi administrator.',
-                500
-            );
-        }
-
-        if (($info['found'] ?? false) !== true) {
-            return $this->decision(
-                false,
-                'endpoint_not_registered',
-                'Fitur ini belum terdaftar di sistem. Silakan hubungi administrator.',
-                404
-            );
-        }
-
-        // 2. Validasi status route.
-        $routeFlags = [
-            'is_discovered' => [
-                'endpoint_not_discovered',
-                'Endpoint belum terdeteksi oleh sistem. Silakan hubungi administrator.',
-            ],
-            'is_routable' => [
-                'route_not_routable',
-                'Fitur ini belum diaktifkan untuk routing. Silakan hubungi administrator.',
-            ],
-            'is_allowed' => [
-                'route_not_allowed',
-                'Akses ke fitur ini belum diizinkan oleh administrator.',
-            ],
-        ];
-
-        foreach ($routeFlags as $flag => [$reason, $message]) {
-            if (($info[$flag] ?? false) !== true) {
-                return $this->decision(
-                    false,
-                    $reason,
-                    $message,
-                    403
-                );
-            }
-        }
-
-        // 3. Validasi HTTP verb.
-        if (($info['verb_registered'] ?? false) !== true) {
-            return $this->decision(
-                false,
-                'http_verb_not_allowed',
-                'Metode akses untuk fitur ini belum dikonfigurasi.',
-                405
-            );
-        }
-
-        // 4. Validasi route ID.
-        $routeId = (int) ($info['id'] ?? 0);
-
-        if ($routeId <= 0) {
-            log_message(
-                'error',
-                'Route ID tidak valid untuk endpoint {endpoint}.',
-                ['endpoint' => $endpoint]
-            );
-
-            return $this->decision(
-                false,
-                'invalid_route_id',
-                'Konfigurasi fitur tidak valid. Silakan hubungi administrator.',
-                500
-            );
-        }
-
-        // 5. Public endpoint.
-        // Tetap wajib melewati validasi Route Registry dan HTTP verb.
-        try {
-            if ($this->isPolicyPublicEndpoint($endpoint, $httpVerb)) {
-                return $this->decision(
-                    true,
-                    'public_endpoint',
-                    'Akses diizinkan.',
-                    200
-                );
-            }
-        } catch (\Throwable $e) {
-            log_message(
-                'error',
-                'Gagal memeriksa public policy: {error}',
-                ['error' => $e->getMessage()]
-            );
-
-            return $this->decision(
-                false,
-                'public_policy_error',
-                'Kebijakan akses tidak dapat diverifikasi.',
-                500
-            );
-        }
-
-        // 6. Autentikasi.
-        $user = $this->authenticationResolver->getAuthenticatedUser();
-
-        // $user = $this->authenticationResolver->getSessionUser();
-        if ($user === null) {
-            return $this->decision(
-                false,
-                'authentication_required',
-                'Silakan masuk terlebih dahulu untuk mengakses fitur ini.',
-                401
-            );
-        }
-        $userId = (int) ($user->id ?? 0);
-        if ($userId <= 0) {
-            log_message('error', 'AccessChecker: authenticated user dengan ID invalid.', [
-                'endpoint' => $endpoint,
-            ]);
-            return $this->decision(
-                false,
-                'invalid_user',
-                'Akun tidak dapat diverifikasi. Silakan masuk kembali.',
-                401
-            );
-        }
-
-        // 7. Validasi akun dan bypass group.
-        try {
-            $accessControl = service('accessControl');
-
-            if (! $accessControl->isActiveUser($userId)) {
-                return $this->decision(
-                    false,
-                    'user_inactive',
-                    'Akun tidak aktif atau tidak dapat digunakan. Silakan hubungi administrator.',
-                    403
-                );
-            }
-
-            $isBypassGroup = $this->isPolicyBypassGroup($userId);
-        } catch (\Throwable $e) {
-            log_message(
-                'error',
-                'Gagal memvalidasi akun {userId}: {error}',
-                [
-                    'userId' => $userId,
-                    'error' => $e->getMessage(),
-                ]
-            );
-
-            return $this->decision(
-                false,
-                'account_validation_error',
-                'Status akun tidak dapat diverifikasi. Silakan coba kembali.',
-                500
-            );
-        }
-
-        // 8. Bypass group hanya melewati grant permission.
-        // Route Registry, status route, HTTP verb, autentikasi,
-        // dan status akun sudah divalidasi sebelumnya.
-        if ($isBypassGroup) {
-            $bypassAllowedVerbs = ['GET', 'POST', 'HEAD'];
-
-            if (! in_array($httpVerb, $bypassAllowedVerbs, true)) {
-                log_message(
-                    'warning',
-                    'AccessChecker: bypass group ditolak untuk HTTP verb {verb}, endpoint {endpoint}.',
-                    [
-                        'verb'     => $httpVerb,
-                        'endpoint' => $endpoint,
-                    ]
-                );
-
-                return $this->decision(
-                    false,
-                    'bypass_http_verb_denied',
-                    'Metode akses ini tidak diizinkan untuk grup bypass.',
-                    403
-                );
-            }
-
-            return $this->decision(
-                true,
-                'bypass_group',
-                'Akses diizinkan.',
-                200
-            );
-        }
-
-        // 9. Permission override.
-        try {
-            $override = $this->resolvePolicyOverride(
-                $endpoint,
-                $httpVerb
-            );
-        } catch (\Throwable $e) {
-            log_message(
-                'error',
-                'Permission override tidak valid. Endpoint: {endpoint}; Error: {error}',
-                [
-                    'endpoint' => $endpoint,
-                    'error' => $e->getMessage(),
-                ]
-            );
-
-            return $this->decision(
-                false,
-                'invalid_permission_override',
-                'Konfigurasi hak akses tidak valid. Silakan hubungi administrator.',
-                500
-            );
-        }
-
-        if ($override !== null) {
-            // Cukup login dan akun aktif.
-            if ($override === Rbac::AUTHENTICATED) {
-                return $this->decision(
-                    true,
-                    'authenticated_access_granted',
-                    'Akses diizinkan.',
-                    200
-                );
-            }
-
-            // Override menggantikan permission Route Registry.
-            try {
-                $allowed = $accessControl->hasAllPermissions(
-                    $userId,
-                    [$override]
-                );
-            } catch (\Throwable $e) {
-                log_message(
-                    'error',
-                    'Override permission check gagal. Endpoint: {endpoint}; User: {userId}; Error: {error}',
-                    [
-                        'endpoint' => $endpoint,
-                        'userId' => $userId,
-                        'error' => $e->getMessage(),
-                    ]
-                );
-
-                return $this->decision(
-                    false,
-                    'authorization_error',
-                    'Izin akses tidak dapat diverifikasi.',
-                    500
-                );
-            }
-
-            return $this->decision(
-                $allowed,
-                $allowed ? 'permission_override_granted' : 'permission_denied',
-                $allowed
-                    ? 'Akses diizinkan.'
-                    : 'Anda tidak memiliki izin untuk mengakses fitur ini.',
-                $allowed ? 200 : 403
-            );
-        }
-
-        // 10. Validasi permission Route Registry.
-        $permissions = $info['permissions'] ?? null;
-
-        if (! is_array($permissions)) {
-            log_message(
-                'error',
-                'Format permission route tidak valid untuk endpoint {endpoint}.',
-                ['endpoint' => $endpoint]
-            );
-
-            return $this->decision(
-                false,
-                'invalid_route_permissions',
-                'Konfigurasi hak akses fitur tidak valid. Silakan hubungi administrator.',
-                500
-            );
-        }
-
-        $normalizedPermissions = [];
-
-        foreach ($permissions as $permission) {
-            if (! is_string($permission) || trim($permission) === '') {
-                log_message(
-                    'error',
-                    'Permission route tidak valid. Endpoint: {endpoint}; Route ID: {routeId}.',
-                    [
-                        'endpoint' => $endpoint,
-                        'routeId' => $routeId,
-                    ]
-                );
-
-                return $this->decision(
-                    false,
-                    'invalid_route_permissions',
-                    'Konfigurasi hak akses fitur tidak valid. Silakan hubungi administrator.',
-                    500
-                );
-            }
-
-            $permission = trim($permission);
-            $normalizedPermissions[$permission] = $permission;
-        }
-
-        $permissions = array_values($normalizedPermissions);
-
-        if ($permissions === []) {
-            log_message(
-                'error',
-                'Permission belum dikonfigurasi untuk endpoint {endpoint}, route ID {routeId}.',
-                [
-                    'endpoint' => $endpoint,
-                    'routeId' => $routeId,
-                ]
-            );
-
-            return $this->decision(
-                false,
-                'route_permission_not_configured',
-                'Hak akses untuk fitur ini belum dikonfigurasi. Silakan hubungi administrator.',
-                403
-            );
-        }
-
-        // 11. Pemeriksaan permission melalui Route Registry.
-        try {
-            $allowed = $registry->allows($userId, $routeId);
-        } catch (\Throwable $e) {
-            log_message(
-                'error',
-                'Pemeriksaan permission gagal. Endpoint: {endpoint}; User: {userId}; Error: {error}',
-                [
-                    'endpoint' => $endpoint,
-                    'userId' => $userId,
-                    'error' => $e->getMessage(),
-                ]
-            );
-
-            return $this->decision(
-                false,
-                'authorization_error',
-                'Izin akses tidak dapat diverifikasi. Silakan coba kembali atau hubungi administrator.',
-                500
-            );
-        }
-
-        return $this->decision(
-            $allowed,
-            $allowed ? 'permission_granted' : 'permission_denied',
-            $allowed
-                ? 'Akses diizinkan.'
-                : 'Anda tidak memiliki izin untuk mengakses fitur ini.',
-            $allowed ? 200 : 403
-        );
+        return $this->evaluate($endpoint)->toArray();
     }
 
-
-
-    /**
-     * Kompatibilitas dengan pemanggil yang membutuhkan boolean.
-     */
     public function checkAccess(string $endpoint): bool
     {
-        return $this->diagnoseAccess($endpoint)['allowed'];
+        return $this->evaluate($endpoint)->allowed;
     }
 
     public function isSuperadmin(): bool
     {
-        $user = $this->authenticationResolver->getAuthenticatedUser();
-        $userId = (int) ($user->id ?? 0);
+        $userId = $this->resolveUserId();
 
         if ($userId <= 0) {
             return false;
@@ -440,155 +65,468 @@ class AccessChecker
 
             return $accessControl->isActiveUser($userId)
                 && $accessControl->isSuperadmin($userId);
-        } catch (\Throwable $e) {
-            log_message(
-                'error',
-                'Gagal memeriksa status superadmin: {error}',
-                ['error' => $e->getMessage()]
-            );
+        } catch (Throwable $e) {
+            log_message('error', 'Gagal memeriksa status superadmin: {error}', [
+                'error' => $e->getMessage(),
+            ]);
 
             return false;
         }
     }
 
-    private function decision(
-        bool $allowed,
-        string $reason,
-        string $message,
-        int $status
-    ): array {
-        return [
-            'allowed' => $allowed,
-            'reason' => $reason,
-            'message' => $message,
-            'status' => $status,
-        ];
-    }
+    // -----------------------------------------------------------------
+    // Pipeline
+    // -----------------------------------------------------------------
 
-
-    private function matchesPolicyPattern(string $endpoint, string $pattern, string $httpVerb): bool
+    private function evaluate(string $endpoint): AccessDecision
     {
-        $pattern = trim($pattern);
-        if ($pattern === '') {
-            return false;
+        $endpoint = trim($endpoint);
+
+        if ($endpoint === '') {
+            return $this->deny('invalid_endpoint', 'Endpoint yang diminta tidak valid.', 404, $endpoint);
         }
 
-        if (preg_match('/^([A-Z]+)\s+(.+)$/i', $pattern, $m)) {
-            if (strtoupper($m[1]) !== $httpVerb) {
-                return false;
-            }
-            $pattern = trim($m[2]);
+        $httpVerb = strtoupper($this->request->getMethod());
+
+        // 1. Route Registry.
+        $info = $this->inspectRoute($endpoint, $httpVerb);
+
+        if ($info instanceof AccessDecision) {
+            return $info;
         }
 
-        $endpoint = trim($endpoint, '/');
-        $pattern  = trim($pattern, '/');
+        // 2. Route flags.
+        $flagDecision = $this->validateRouteFlags($info, $endpoint);
 
-        if ($endpoint === '' && $pattern === '') {
-            return true;
+        if ($flagDecision !== null) {
+            return $flagDecision;
         }
 
-        // Bangun regex per-segmen agar ** tidak greedy lintas batas tak terkendali.
-        $parts = explode('/', $pattern);
-        $regexParts = [];
-
-        foreach ($parts as $part) {
-            if ($part === '**') {
-                $regexParts[] = '.*';
-            } elseif ($part === '*') {
-                $regexParts[] = '[^/]+';
-            } else {
-                $regexParts[] = preg_quote($part, '#');
-            }
+        // 3. HTTP verb.
+        if (($info['verb_registered'] ?? false) !== true) {
+            return $this->deny(
+                'http_verb_not_allowed',
+                'Metode akses untuk fitur ini belum dikonfigurasi.',
+                405,
+                $endpoint
+            );
         }
 
-        $regex = implode('/', $regexParts);
+        // 4. Route ID.
+        $routeId = (int) ($info['id'] ?? 0);
 
-        // '**/' di awal → boleh nol segmen.
-        $regex = preg_replace('#(^|/)\.\*/#', '$1(?:.*/)?', $regex);
+        if ($routeId <= 0) {
+            log_message('error', 'Route ID tidak valid untuk endpoint {endpoint}.', ['endpoint' => $endpoint]);
 
-        return preg_match('#^' . $regex . '$#', $endpoint) === 1;
+            return $this->deny(
+                'invalid_route_id',
+                'Konfigurasi fitur tidak valid. Silakan hubungi administrator.',
+                500,
+                $endpoint
+            );
+        }
+
+        // 5. Public endpoint.
+        $publicDecision = $this->checkPublic($endpoint, $httpVerb);
+
+        if ($publicDecision !== null) {
+            return $publicDecision;
+        }
+
+        // 6. Authentication.
+        $authDecision = $this->requireAuthenticatedUser($endpoint);
+
+        if ($authDecision !== null) {
+            return $authDecision;
+        }
+
+        $userId = $this->resolveUserId();
+
+        // 7. Account state + bypass membership.
+        $accountResult = $this->validateAccount($userId, $endpoint);
+
+        if ($accountResult instanceof AccessDecision) {
+            return $accountResult;
+        }
+
+        // 8. Bypass group (verb-limited).
+        if ($accountResult === true) {
+            return $this->handleBypassGroup($userId, $endpoint, $httpVerb);
+        }
+
+        // 9. Permission override.
+        $overrideDecision = $this->resolveOverrideDecision($userId, $endpoint, $httpVerb);
+
+        if ($overrideDecision !== null) {
+            return $overrideDecision;
+        }
+
+        // 10–11. Route permissions.
+        return $this->resolveRoutePermission($userId, $routeId, $endpoint, $info);
     }
+
+    // -----------------------------------------------------------------
+    // Steps
+    // -----------------------------------------------------------------
+
+    /**
+     * @return array<string, mixed>|AccessDecision
+     */
+    private function inspectRoute(string $endpoint, string $httpVerb): array|AccessDecision
+    {
+        try {
+            $registry = service('routeRegistryAccess');
+            $info     = $registry->inspectEndpoint($this->module, $endpoint, $httpVerb);
+        } catch (Throwable $e) {
+            log_message('error', 'Gagal memeriksa route registry. Endpoint: {endpoint}; Error: {error}', [
+                'endpoint' => $endpoint,
+                'error'    => $e->getMessage(),
+            ]);
+
+            return $this->deny(
+                'route_registry_error',
+                'Status fitur tidak dapat diverifikasi. Silakan coba kembali atau hubungi administrator.',
+                500,
+                $endpoint
+            );
+        }
+
+        if (($info['found'] ?? false) !== true) {
+            return $this->deny(
+                'endpoint_not_registered',
+                'Fitur ini belum terdaftar di sistem. Silakan hubungi administrator.',
+                404,
+                $endpoint
+            );
+        }
+
+        return $info;
+    }
+
+    /**
+     * @param array<string, mixed> $info
+     */
+    private function validateRouteFlags(array $info, string $endpoint): ?AccessDecision
+    {
+        $flags = [
+            'is_discovered' => ['endpoint_not_discovered', 'Endpoint belum terdeteksi oleh sistem. Silakan hubungi administrator.'],
+            'is_routable'   => ['route_not_routable', 'Fitur ini belum diaktifkan untuk routing. Silakan hubungi administrator.'],
+            'is_allowed'    => ['route_not_allowed', 'Akses ke fitur ini belum diizinkan oleh administrator.'],
+        ];
+
+        foreach ($flags as $flag => [$reason, $message]) {
+            if (($info[$flag] ?? false) !== true) {
+                return $this->deny($reason, $message, 403, $endpoint);
+            }
+        }
+
+        return null;
+    }
+
+    private function checkPublic(string $endpoint, string $httpVerb): ?AccessDecision
+    {
+        try {
+            if ($this->isPolicyPublicEndpoint($endpoint, $httpVerb)) {
+                return AccessDecision::allow('public_endpoint');
+            }
+        } catch (Throwable $e) {
+            log_message('error', 'Gagal memeriksa public policy: {error}', ['error' => $e->getMessage()]);
+
+            return $this->deny(
+                'public_policy_error',
+                'Kebijakan akses tidak dapat diverifikasi.',
+                500,
+                $endpoint
+            );
+        }
+
+        return null;
+    }
+
+    private function requireAuthenticatedUser(string $endpoint): ?AccessDecision
+    {
+        if (! $this->isAuthenticated()) {
+            return $this->deny(
+                'authentication_required',
+                'Silakan masuk terlebih dahulu untuk mengakses fitur ini.',
+                401,
+                $endpoint
+            );
+        }
+
+        return null;
+    }
+
+    /**
+     * @return AccessDecision|bool True jika bypass group, false jika bukan,
+     *                          AccessDecision jika ada kegagalan.
+     */
+    private function validateAccount(int $userId, string $endpoint): AccessDecision|bool
+    {
+        try {
+            $accessControl = service('accessControl');
+
+            if (! $accessControl->isActiveUser($userId)) {
+                return $this->deny(
+                    'user_inactive',
+                    'Akun tidak aktif atau tidak dapat digunakan. Silakan hubungi administrator.',
+                    403,
+                    $endpoint
+                );
+            }
+
+            return $this->isPolicyBypassGroup($userId);
+        } catch (Throwable $e) {
+            log_message('error', 'Gagal memvalidasi akun {userId}: {error}', [
+                'userId' => $userId,
+                'error'  => $e->getMessage(),
+            ]);
+
+            return $this->deny(
+                'account_validation_error',
+                'Status akun tidak dapat diverifikasi. Silakan coba kembali.',
+                500,
+                $endpoint
+            );
+        }
+    }
+
+    private function handleBypassGroup(int $userId, string $endpoint, string $httpVerb): AccessDecision
+    {
+        $allowedVerbs = ['GET', 'POST', 'HEAD'];
+
+        if (! in_array($httpVerb, $allowedVerbs, true)) {
+            log_message('warning', 'Bypass group ditolak untuk verb {verb}, endpoint {endpoint}, user {userId}.', [
+                'verb'     => $httpVerb,
+                'endpoint' => $endpoint,
+                'userId'   => $userId,
+            ]);
+
+            return $this->deny(
+                'bypass_http_verb_denied',
+                'Metode akses ini tidak diizinkan untuk grup bypass.',
+                403,
+                $endpoint
+            );
+        }
+
+        return AccessDecision::allow('bypass_group');
+    }
+
+    private function resolveOverrideDecision(int $userId, string $endpoint, string $httpVerb): ?AccessDecision
+    {
+        try {
+            $override = $this->resolvePolicyOverride($httpVerb);
+        } catch (AmbiguousOverrideException $e) {
+            log_message('error', 'Permission override ambigu: {error}', ['error' => $e->getMessage()]);
+
+            return $this->deny(
+                'ambiguous_permission_override',
+                'Konfigurasi hak akses ambigu. Silakan hubungi administrator.',
+                500,
+                $endpoint
+            );
+        } catch (Throwable $e) {
+            log_message('error', 'Permission override tidak valid. Endpoint: {endpoint}; Error: {error}', [
+                'endpoint' => $endpoint,
+                'error'    => $e->getMessage(),
+            ]);
+
+            return $this->deny(
+                'invalid_permission_override',
+                'Konfigurasi hak akses tidak valid. Silakan hubungi administrator.',
+                500,
+                $endpoint
+            );
+        }
+
+        if ($override === null) {
+            return null;
+        }
+
+        if ($override === Rbac::AUTHENTICATED) {
+            return AccessDecision::allow('authenticated_access_granted');
+        }
+
+        try {
+            $accessControl = service('accessControl');
+            $allowed       = $accessControl->hasAllPermissions($userId, [$override]);
+        } catch (Throwable $e) {
+            log_message('error', 'Override permission check gagal. Endpoint: {endpoint}; User: {userId}; Error: {error}', [
+                'endpoint' => $endpoint,
+                'userId'   => $userId,
+                'error'    => $e->getMessage(),
+            ]);
+
+            return $this->deny(
+                'authorization_error',
+                'Izin akses tidak dapat diverifikasi.',
+                500,
+                $endpoint
+            );
+        }
+
+        return $allowed
+            ? AccessDecision::allow('permission_override_granted')
+            : $this->deny(
+                'permission_denied',
+                'Anda tidak memiliki izin untuk mengakses fitur ini.',
+                403,
+                $endpoint
+            );
+    }
+
+    /**
+     * @param array<string, mixed> $info
+     */
+    private function resolveRoutePermission(int $userId, int $routeId, string $endpoint, array $info): AccessDecision
+    {
+        $permissions = $this->normalizePermissions($info['permissions'] ?? null, $endpoint, $routeId);
+
+        if ($permissions instanceof AccessDecision) {
+            return $permissions;
+        }
+
+        try {
+            $registry = service('routeRegistryAccess');
+            $allowed  = $registry->allows($userId, $routeId);
+        } catch (Throwable $e) {
+            log_message('error', 'Pemeriksaan permission gagal. Endpoint: {endpoint}; User: {userId}; Error: {error}', [
+                'endpoint' => $endpoint,
+                'userId'   => $userId,
+                'error'    => $e->getMessage(),
+            ]);
+
+            return $this->deny(
+                'authorization_error',
+                'Izin akses tidak dapat diverifikasi. Silakan coba kembali atau hubungi administrator.',
+                500,
+                $endpoint
+            );
+        }
+
+        return $allowed
+            ? AccessDecision::allow('permission_granted')
+            : $this->deny(
+                'permission_denied',
+                'Anda tidak memiliki izin untuk mengakses fitur ini.',
+                403,
+                $endpoint
+            );
+    }
+
+    /**
+     * @return list<string>|AccessDecision
+     */
+    private function normalizePermissions(mixed $raw, string $endpoint, int $routeId): array|AccessDecision
+    {
+        if (! is_array($raw)) {
+            log_message('error', 'Format permission route tidak valid untuk endpoint {endpoint}.', ['endpoint' => $endpoint]);
+
+            return $this->deny(
+                'invalid_route_permissions',
+                'Konfigurasi hak akses fitur tidak valid. Silakan hubungi administrator.',
+                500,
+                $endpoint
+            );
+        }
+
+        $normalized = [];
+
+        foreach ($raw as $permission) {
+            if (! is_string($permission) || trim($permission) === '') {
+                log_message('error', 'Permission route tidak valid. Endpoint: {endpoint}; Route ID: {routeId}.', [
+                    'endpoint' => $endpoint,
+                    'routeId'  => $routeId,
+                ]);
+
+                return $this->deny(
+                    'invalid_route_permissions',
+                    'Konfigurasi hak akses fitur tidak valid. Silakan hubungi administrator.',
+                    500,
+                    $endpoint
+                );
+            }
+
+            $permission = trim($permission);
+
+            // Dedup case-sensitive (permission code dianggap case-sensitive).
+            $normalized[$permission] = $permission;
+        }
+
+        if ($normalized === []) {
+            log_message('error', 'Permission belum dikonfigurasi untuk endpoint {endpoint}, route ID {routeId}.', [
+                'endpoint' => $endpoint,
+                'routeId'  => $routeId,
+            ]);
+
+            return $this->deny(
+                'route_permission_not_configured',
+                'Hak akses untuk fitur ini belum dikonfigurasi. Silakan hubungi administrator.',
+                403,
+                $endpoint
+            );
+        }
+
+        return array_values($normalized);
+    }
+
+    // -----------------------------------------------------------------
+    // Policy helpers
+    // -----------------------------------------------------------------
 
     private function isPolicyPublicEndpoint(string $endpoint, string $httpVerb): bool
     {
-        // Domain utama: path URL.
-        $requestPath = trim($this->request->getUri()->getPath(), '/');
-
         foreach ($this->policy->publicPatterns as $pattern) {
-            if (is_string($pattern) && $this->matchesPolicyPattern($requestPath, $pattern, $httpVerb)) {
+            if (is_string($pattern) && $this->matcher->matches($this->requestPath->value, $pattern, $httpVerb)) {
                 return true;
             }
         }
 
-        // Deprecated: publicMethods (nama endpoint) — pertahankan kompatibilitas.
-        if (in_array($endpoint, $this->publicMethods, true)) {
+        // Deprecated: publicMethods berisi NAMA endpoint (bukan path).
+        // Dipertahankan untuk kompatibilitas; akan dihapus di versi berikutnya.
+        if ($endpoint !== '' && in_array($endpoint, $this->publicMethods, true)) {
             log_message('debug', 'AccessChecker: publicMethods deprecated, gunakan publicPatterns. Endpoint: ' . $endpoint);
+
             return true;
         }
 
         return false;
     }
 
-
-
-    private function resolvePolicyOverride(
-        string $endpoint,
-        string $httpVerb
-    ): ?string {
-        $requestPath = trim(
-            $this->request->getUri()->getPath(),
-            '/'
-        );
+    /**
+     * @throws AmbiguousOverrideException
+     * @throws InvalidPolicyException
+     */
+    private function resolvePolicyOverride(string $httpVerb): ?string
+    {
+        $path = $this->requestPath->value;
 
         $matched = [];
 
         foreach ($this->policy->overrides as $pattern => $permission) {
             if (! is_string($pattern) || ! is_string($permission)) {
-                throw new \UnexpectedValueException(
-                    'Format permission override tidak valid.'
-                );
+                throw new InvalidPolicyException('Format permission override tidak valid.');
             }
 
-            $pattern = trim($pattern);
+            $pattern    = trim($pattern);
             $permission = trim($permission);
 
             if ($pattern === '' || $permission === '') {
-                throw new \UnexpectedValueException(
-                    "Permission override kosong: {$pattern}"
-                );
+                throw new InvalidPolicyException("Permission override kosong: '{$pattern}'");
             }
 
-            if (! $this->matchesPolicyPattern(
-                $requestPath,
-                $pattern,
-                $httpVerb
-            )) {
+            if (! $this->matcher->matches($path, $pattern, $httpVerb)) {
                 continue;
             }
 
-            // Hilangkan prefix HTTP verb untuk menghitung
-            // tingkat spesifisitas pola path saja.
-            $pathPattern = $pattern;
-
-            if (preg_match('/^[A-Z]+\s+/i', $pathPattern)) {
-                $pathPattern = preg_replace(
-                    '/^[A-Z]+\s+/i',
-                    '',
-                    $pathPattern
-                );
-            }
-
-            $wildcardCount = substr_count($pathPattern, '*');
-
-            $literalLength = strlen(
-                str_replace('*', '', $pathPattern)
-            );
+            $specificity = $this->matcher->specificity($pattern);
 
             $matched[] = [
                 'pattern'        => $pattern,
                 'permission'     => $permission,
-                'wildcards'      => $wildcardCount,
-                'literal_length' => $literalLength,
+                'wildcards'      => $specificity['wildcards'],
+                'literal_length' => $specificity['literal_length'],
             ];
         }
 
@@ -596,46 +534,33 @@ class AccessChecker
             return null;
         }
 
-        // Prioritas:
-        // 1. Wildcard paling sedikit.
-        // 2. Karakter literal paling banyak.
-        usort(
-            $matched,
-            static function (array $a, array $b): int {
-                $wildcardCompare = $a['wildcards']
-                    <=> $b['wildcards'];
+        usort($matched, static function (array $a, array $b): int {
+            // Wildcard lebih sedikit = lebih spesifik.
+            $cmp = $a['wildcards'] <=> $b['wildcards'];
 
-                if ($wildcardCompare !== 0) {
-                    return $wildcardCompare;
-                }
-
-                return $b['literal_length']
-                    <=> $a['literal_length'];
+            if ($cmp !== 0) {
+                return $cmp;
             }
-        );
+
+            // Literal lebih panjang = lebih spesifik.
+            return $b['literal_length'] <=> $a['literal_length'];
+        });
 
         $best = $matched[0];
 
-        // Periksa semua pola dengan tingkat spesifisitas sama.
         foreach (array_slice($matched, 1) as $candidate) {
-            $sameSpecificity =
-                $candidate['wildcards'] === $best['wildcards']
+            $sameSpecificity = $candidate['wildcards'] === $best['wildcards']
                 && $candidate['literal_length'] === $best['literal_length'];
 
             if (! $sameSpecificity) {
                 break;
             }
 
-            // Permission berbeda pada tingkat spesifisitas sama:
-            // jangan memilih berdasarkan urutan konfigurasi.
             if ($candidate['permission'] !== $best['permission']) {
-                throw new \UnexpectedValueException(
-                    'Permission override ambigu untuk path '
-                    . $requestPath
-                    . ': '
-                    . $best['pattern']
-                    . ' vs '
-                    . $candidate['pattern']
+                throw new AmbiguousOverrideException(
+                    "Permission override ambigu untuk path '{$path}': "
+                    . "'{$best['pattern']}' ({$best['permission']}) vs "
+                    . "'{$candidate['pattern']}' ({$candidate['permission']})."
                 );
             }
         }
@@ -643,23 +568,78 @@ class AccessChecker
         return $best['permission'];
     }
 
-
     private function isPolicyBypassGroup(int $userId): bool
     {
+        /** @var list<string> $groups */
         $groups = array_values(array_filter(
-            $this->policy->bypassGroups,
-            static fn ($group): bool =>
-            is_string($group) && trim($group) !== ''
+            $this->policy->bypassGroups ?? [],
+            static fn ($group): bool => is_string($group) && trim($group) !== ''
         ));
 
         if ($groups === []) {
             return false;
         }
 
-        return db_connect()
-            ->table('auth_groups_users')
-            ->where('user_id', $userId)
-            ->whereIn('group', $groups)
-            ->countAllResults() > 0;
+        return $this->groupResolver->userHasAnyGroup($userId, $groups);
+    }
+
+    // -----------------------------------------------------------------
+    // User resolution (delegasi ke AuthenticationResolver yang sudah memoized)
+    // -----------------------------------------------------------------
+
+    /**
+     * @throws Throwable Jika AuthenticationResolver melempar RuntimeException
+     *                   akibat programmer error (ArgumentCountError/TypeError).
+     *                   Caller harus menangani ini.
+     */
+    private function resolveAuthenticatedUser(): ?object
+    {
+        if ($this->userResolved) {
+            return $this->resolvedUser;
+        }
+
+        $this->userResolved = true;
+
+        try {
+            return $this->resolvedUser = $this->authenticationResolver->getAuthenticatedUser();
+        } catch (Throwable $e) {
+            // AuthenticationResolver hanya melempar untuk programmer error;
+            // log dan anggap tidak terautentikasi agar tidak meng-crash request.
+            log_message('error', 'AuthenticationResolver melempar saat resolve user: {error}', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return $this->resolvedUser = null;
+        }
+    }
+
+    private function resolveUserId(): int
+    {
+        return (int) ($this->resolveAuthenticatedUser()?->id ?? 0);
+    }
+
+    private function isAuthenticated(): bool
+    {
+        return $this->resolveUserId() > 0;
+    }
+
+    // -----------------------------------------------------------------
+    // Decision helper + logging
+    // -----------------------------------------------------------------
+
+    private function deny(string $reason, string $message, int $status, string $endpoint): AccessDecision
+    {
+        // Log semua denial untuk audit keamanan.
+        // 5xx di level error, 4xx di level info.
+        $level = $status >= 500 ? 'error' : 'info';
+
+        log_message($level, 'AccessChecker deny: reason={reason}; status={status}; path={path}; endpoint={endpoint}', [
+            'reason'   => $reason,
+            'status'   => $status,
+            'path'     => $this->requestPath->value,
+            'endpoint' => $endpoint,
+        ]);
+
+        return AccessDecision::deny($reason, $message, $status);
     }
 }

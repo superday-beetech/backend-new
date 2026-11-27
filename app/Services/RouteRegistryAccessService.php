@@ -13,7 +13,7 @@ class RouteRegistryAccessService
     protected AccessControlService $accessControl;
 
     /**
-     * Cache route:
+     * Cache route untuk findRoute():
      * module|endpoint|http_verb
      *
      * Cache hanya hidup selama instance service hidup.
@@ -21,6 +21,23 @@ class RouteRegistryAccessService
      * @var array<string, array|null>
      */
     private array $routeCache = [];
+
+    /**
+     * Cache info route untuk inspectEndpoint():
+     * module|endpoint
+     *
+     * Nilai null berarti route tidak ditemukan (cache negatif).
+     *
+     * @var array<string, array<string, mixed>|null>
+     */
+    private array $routeInfoCache = [];
+
+    /**
+     * Cache set verb terdaftar per route ID.
+     *
+     * @var array<int, array<string, true>>
+     */
+    private array $verbCache = [];
 
     /**
      * Cache permission berdasarkan route ID.
@@ -39,9 +56,10 @@ class RouteRegistryAccessService
             ?? new AccessControlService($this->db);
     }
 
-    /**
-     * Membuat cache key yang terisolasi berdasarkan module.
-     */
+    // ============================================================
+    // Cache keys
+    // ============================================================
+
     private function routeCacheKey(
         string $module,
         string $endpoint,
@@ -49,6 +67,17 @@ class RouteRegistryAccessService
     ): string {
         return $module . '|' . $endpoint . '|' . $httpVerb;
     }
+
+    private function routeInfoCacheKey(
+        string $module,
+        string $endpoint
+    ): string {
+        return $module . '|' . $endpoint;
+    }
+
+    // ============================================================
+    // Cache invalidation
+    // ============================================================
 
     /**
      * Membersihkan cache.
@@ -69,46 +98,63 @@ class RouteRegistryAccessService
     ): void {
         if ($endpoint === null) {
             $this->routeCache = [];
+            $this->routeInfoCache = [];
+
+            if ($module === null) {
+                $this->verbCache = [];
+            }
         } else {
             $endpoint = trim($endpoint);
 
             if ($module !== null) {
                 $module = trim($module);
-                $prefix = $module . '|' . $endpoint . '|';
 
+                // routeCache: module|endpoint|verb
+                $prefix = $module . '|' . $endpoint . '|';
                 foreach (array_keys($this->routeCache) as $key) {
                     if (str_starts_with($key, $prefix)) {
                         unset($this->routeCache[$key]);
                     }
                 }
+
+                // routeInfoCache: module|endpoint
+                unset($this->routeInfoCache[$module . '|' . $endpoint]);
             } else {
+                // Hapus semua module untuk endpoint ini.
                 foreach (array_keys($this->routeCache) as $key) {
                     $parts = explode('|', $key, 3);
-
-                    if (
-                        count($parts) === 3
-                        && $parts[1] === $endpoint
-                    ) {
+                    if (count($parts) === 3 && $parts[1] === $endpoint) {
                         unset($this->routeCache[$key]);
+                    }
+                }
+
+                foreach (array_keys($this->routeInfoCache) as $key) {
+                    $parts = explode('|', $key, 2);
+                    if (count($parts) === 2 && $parts[1] === $endpoint) {
+                        unset($this->routeInfoCache[$key]);
                     }
                 }
             }
         }
 
         if ($routeId !== null) {
-            unset($this->routePermissionsCache[$routeId]);
+            unset(
+                $this->routePermissionsCache[$routeId],
+                $this->verbCache[$routeId]
+            );
         } else {
             $this->routePermissionsCache = [];
+
+            if ($endpoint === null && $module === null) {
+                $this->verbCache = [];
+            }
         }
     }
 
-    /**
-     * Mengambil route aktif berdasarkan module, endpoint,
-     * dan HTTP verb.
-     *
-     * Hasil null juga di-cache agar pencarian yang gagal
-     * tidak berulang selama instance service hidup.
-     */
+    // ============================================================
+    // findRoute (sudah ada cache)
+    // ============================================================
+
     private function findRoute(
         string $module,
         string $endpoint,
@@ -118,19 +164,11 @@ class RouteRegistryAccessService
         $endpoint = trim($endpoint);
         $httpVerb = strtoupper(trim($httpVerb));
 
-        if (
-            $module === ''
-            || $endpoint === ''
-            || $httpVerb === ''
-        ) {
+        if ($module === '' || $endpoint === '' || $httpVerb === '') {
             return null;
         }
 
-        $key = $this->routeCacheKey(
-            $module,
-            $endpoint,
-            $httpVerb
-        );
+        $key = $this->routeCacheKey($module, $endpoint, $httpVerb);
 
         if (array_key_exists($key, $this->routeCache)) {
             return $this->routeCache[$key];
@@ -138,11 +176,7 @@ class RouteRegistryAccessService
 
         $route = $this->db
             ->table('route_registry AS rr')
-            ->select([
-                'rr.id',
-                'rr.module',
-                'rr.endpoint',
-            ])
+            ->select(['rr.id', 'rr.module', 'rr.endpoint'])
             ->join(
                 'route_registry_verbs AS rrv',
                 'rrv.route_id = rr.id',
@@ -160,10 +194,6 @@ class RouteRegistryAccessService
         return $this->routeCache[$key] = $route ?: null;
     }
 
-    /**
-     * Memeriksa apakah HTTP verb diizinkan untuk module
-     * dan endpoint tertentu.
-     */
     public function allowsHttpVerb(
         string $module,
         string $endpoint,
@@ -176,9 +206,6 @@ class RouteRegistryAccessService
         ) !== null;
     }
 
-    /**
-     * Mengambil route yang aktif dan diizinkan untuk verb tertentu.
-     */
     public function findAllowedRoute(
         string $module,
         string $endpoint,
@@ -191,12 +218,10 @@ class RouteRegistryAccessService
         );
     }
 
-    /**
-     * Mengambil permission route satu kali, lalu menyimpan hasilnya
-     * dalam cache berdasarkan route ID.
-     *
-     * Nilai permission adalah nama permission, bukan ID.
-     */
+    // ============================================================
+    // getRoutePermissions (sudah ada cache)
+    // ============================================================
+
     private function getRoutePermissions(int $routeId): array
     {
         if ($routeId <= 0) {
@@ -217,9 +242,7 @@ class RouteRegistryAccessService
         $permissions = [];
 
         foreach ($rows as $row) {
-            $permission = trim(
-                (string) ($row['permission'] ?? '')
-            );
+            $permission = trim((string) ($row['permission'] ?? ''));
 
             if ($permission === '') {
                 log_message(
@@ -247,11 +270,10 @@ class RouteRegistryAccessService
         return $this->routePermissionsCache[$routeId] = $permissions;
     }
 
-    /**
-     * Semua permission route harus dipenuhi.
-     *
-     * Route tanpa permission ditolak untuk pengguna biasa.
-     */
+    // ============================================================
+    // allows (sudah ada)
+    // ============================================================
+
     public function allows(int $userId, int $routeId): bool
     {
         if (
@@ -274,8 +296,16 @@ class RouteRegistryAccessService
         );
     }
 
+    // ============================================================
+    // inspectEndpoint (REFACTORED: dengan cache)
+    // ============================================================
+
     /**
      * Mengambil informasi route berdasarkan module dan endpoint.
+     *
+     * Hasil di-cache per (module, endpoint) — tidak termasuk verb,
+     * karena info route sama untuk semua verb. `verb_registered`
+     * dihitung dari cache verb terpisah per route ID.
      *
      * Permission menggunakan getRoutePermissions() agar
      * inspectEndpoint() dan allows() berbagi cache yang sama.
@@ -291,11 +321,7 @@ class RouteRegistryAccessService
         $endpoint = trim($endpoint);
         $httpVerb = strtoupper(trim($httpVerb));
 
-        if (
-            $module === ''
-            || $endpoint === ''
-            || $httpVerb === ''
-        ) {
+        if ($module === '' || $endpoint === '' || $httpVerb === '') {
             return [
                 'found' => false,
                 'module' => $module,
@@ -303,6 +329,52 @@ class RouteRegistryAccessService
                 'http_verb' => $httpVerb,
                 'message' => 'Identitas endpoint tidak valid.',
             ];
+        }
+
+        // 1. Ambil info route dari cache (atau query jika miss).
+        $routeInfo = $this->getRouteInfo($module, $endpoint);
+
+        if ($routeInfo === null) {
+            return [
+                'found' => false,
+                'module' => $module,
+                'endpoint' => $endpoint,
+                'http_verb' => $httpVerb,
+                'message' => 'Endpoint belum terdaftar.',
+            ];
+        }
+
+        $routeId = (int) $routeInfo['id'];
+
+        // 2. Cek verb terdaftar dari cache.
+        $verbs = $this->getRegisteredVerbs($routeId);
+        $verbRegistered = isset($verbs[$httpVerb]);
+
+        // 3. Permission dari cache.
+        $permissions = $this->getRoutePermissions($routeId);
+
+        return [
+            'found' => true,
+            'id' => $routeId,
+            'module' => $routeInfo['module'],
+            'endpoint' => $routeInfo['endpoint'],
+            'is_discovered' => (bool) $routeInfo['is_discovered'],
+            'is_routable' => (bool) $routeInfo['is_routable'],
+            'is_allowed' => (bool) $routeInfo['is_allowed'],
+            'verb_registered' => $verbRegistered,
+            'permissions' => $permissions,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function getRouteInfo(string $module, string $endpoint): ?array
+    {
+        $key = $this->routeInfoCacheKey($module, $endpoint);
+
+        if (array_key_exists($key, $this->routeInfoCache)) {
+            return $this->routeInfoCache[$key];
         }
 
         $route = $this->db
@@ -320,34 +392,35 @@ class RouteRegistryAccessService
             ->get()
             ->getRowArray();
 
-        if ($route === null) {
-            return [
-                'found' => false,
-                'module' => $module,
-                'endpoint' => $endpoint,
-                'http_verb' => $httpVerb,
-                'message' => 'Endpoint belum terdaftar.',
-            ];
+        return $this->routeInfoCache[$key] = $route ?: null;
+    }
+
+    /**
+     * @return array<string, true> Set verb (uppercase) untuk route.
+     */
+    private function getRegisteredVerbs(int $routeId): array
+    {
+        if (array_key_exists($routeId, $this->verbCache)) {
+            return $this->verbCache[$routeId];
         }
 
-        $routeId = (int) $route['id'];
-
-        $verbRegistered = $this->db
+        $rows = $this->db
             ->table('route_registry_verbs')
+            ->select('http_verb')
             ->where('route_id', $routeId)
-            ->where('http_verb', $httpVerb)
-            ->countAllResults() > 0;
+            ->get()
+            ->getResultArray();
 
-        return [
-            'found' => true,
-            'id' => $routeId,
-            'module' => $route['module'],
-            'endpoint' => $route['endpoint'],
-            'is_discovered' => (bool) $route['is_discovered'],
-            'is_routable' => (bool) $route['is_routable'],
-            'is_allowed' => (bool) $route['is_allowed'],
-            'verb_registered' => $verbRegistered,
-            'permissions' => $this->getRoutePermissions($routeId),
-        ];
+        $verbs = [];
+
+        foreach ($rows as $row) {
+            $verb = strtoupper(trim((string) ($row['http_verb'] ?? '')));
+
+            if ($verb !== '') {
+                $verbs[$verb] = true;
+            }
+        }
+
+        return $this->verbCache[$routeId] = $verbs;
     }
 }

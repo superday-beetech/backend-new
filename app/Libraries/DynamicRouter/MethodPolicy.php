@@ -4,6 +4,21 @@ declare(strict_types=1);
 
 namespace App\Libraries\DynamicRouter;
 
+use Throwable;
+
+/**
+ * Validasi method berdasarkan hasil discovery ControllerScanner,
+ * static allowlist, dan Route Registry.
+ *
+ * Prinsip:
+ * - Konflik nama method case-insensitive → fail-closed PERMANEN
+ *   untuk controller tersebut (semua method controller ditolak).
+ * - Tanpa HTTP verb, registry TIDAK dicek (dokumentasi eksplisit);
+ *   keamanan bergantung pada AccessChecker. Reason code dibuat jelas
+ *   agar pemanggil tahu ini bukan "allowed by registry".
+ * - Allowlist kosong karena config invalid dibedakan dari
+ *   "allowlist tidak dikonfigurasi".
+ */
 class MethodPolicy
 {
     /** @var array<string, array<string, string>> */
@@ -12,17 +27,37 @@ class MethodPolicy
     /** @var array<string, true> */
     private array $allowedLookup = [];
 
+    /**
+     * Controller yang memiliki konflik nama method case-insensitive.
+     * Semua method controller ini ditolak (fail-closed permanen).
+     *
+     * @var array<string, true>
+     */
+    private array $conflictedControllers = [];
+
+    /** @var bool Apakah allowedMethods dikonfigurasi (non-empty). */
+    private bool $hasAllowedMethods;
+
     public function __construct(
         private array $discoveredMethods,
         private array $allowedMethods = [],
         private string $module = '',
     ) {
+        $this->hasAllowedMethods = $this->allowedMethods !== [];
+
         $this->buildIndex();
         $this->buildAllowedLookup();
     }
 
+    // ============================================================
+    // Build
+    // ============================================================
+
     private function buildIndex(): void
     {
+        /** @var array<string, array<string, list<string>>> $raw */
+        $raw = [];
+
         foreach ($this->discoveredMethods as $endpoint) {
             if (! is_string($endpoint)) {
                 log_message(
@@ -60,30 +95,37 @@ class MethodPolicy
                 continue;
             }
 
-            $key = strtolower($method);
+            $raw[$controller][strtolower($method)][] = $method;
+        }
 
-            if (isset($this->index[$controller][$key])) {
-                $existing = $this->index[$controller][$key];
+        foreach ($raw as $controller => $byKey) {
+            foreach ($byKey as $key => $names) {
+                $names = array_values(array_unique($names));
 
-                if ($existing !== $method) {
-                    log_message(
-                        'critical',
-                        'MethodPolicy: konflik nama method case-insensitive pada {controller}: {first} dan {second}',
-                        [
-                            'controller' => $controller,
-                            'first'      => $existing,
-                            'second'     => $method,
-                        ]
-                    );
-
-                    // Konflik harus fail-closed, jangan pilih salah satunya.
-                    unset($this->index[$controller][$key]);
-
+                if (count($names) === 1) {
+                    $this->index[$controller][$key] = $names[0];
                     continue;
                 }
-            }
 
-            $this->index[$controller][$key] = $method;
+                // Lebih dari satu nama untuk key yang sama → konflik.
+                // Fail-closed PERMANEN untuk controller ini.
+                $this->conflictedControllers[$controller] = true;
+
+                log_message(
+                    'critical',
+                    'MethodPolicy: konflik nama method case-insensitive pada {controller}: {names}. '
+                    . 'Seluruh controller dinonaktifkan.',
+                    [
+                        'controller' => $controller,
+                        'names'      => implode(', ', $names),
+                    ]
+                );
+            }
+        }
+
+        // Controller yang berkonflik: buang semua method-nya.
+        foreach (array_keys($this->conflictedControllers) as $controller) {
+            unset($this->index[$controller]);
         }
     }
 
@@ -96,6 +138,10 @@ class MethodPolicy
     private function buildAllowedLookup(): void
     {
         $this->allowedLookup = [];
+
+        if (! $this->hasAllowedMethods) {
+            return;
+        }
 
         foreach ($this->allowedMethods as $endpoint) {
             if (! is_string($endpoint)) {
@@ -127,7 +173,22 @@ class MethodPolicy
 
             $this->allowedLookup[$canonical] = true;
         }
+
+        if ($this->allowedLookup === []) {
+            // Semua entry invalid. Fail-closed: setiap method akan ditolak
+            // oleh diagnoseMethod(), tapi kita log sekali di sini agar
+            // tidak membingungkan saat debugging.
+            log_message(
+                'critical',
+                'MethodPolicy: allowedMethods dikonfigurasi tetapi tidak ada entry valid. '
+                . 'Semua method akan ditolak (fail-closed).'
+            );
+        }
     }
+
+    // ============================================================
+    // Normalisasi & resolusi
+    // ============================================================
 
     public function normalizeMethodName(string $method): string
     {
@@ -168,6 +229,10 @@ class MethodPolicy
         string $controller,
         string $requestedMethod
     ): ?string {
+        if (isset($this->conflictedControllers[$controller])) {
+            return null;
+        }
+
         if (! isset($this->index[$controller])) {
             return null;
         }
@@ -203,16 +268,23 @@ class MethodPolicy
         ) !== null;
     }
 
+    // ============================================================
+    // Diagnosis
+    // ============================================================
+
     /**
      * Diagnosa method.
      *
      * Alur:
      * 1. Method harus ditemukan oleh scanner.
+     *    - Controller dengan konflik case-insensitive → METHOD_CONFLICTED.
      * 2. Jika allowedMethods dikonfigurasi, gunakan static allowlist.
-     * 3. Jika HTTP verb tersedia, fallback ke Route Registry
-     *    berdasarkan module dan endpoint.
-     * 4. Jika HTTP verb tidak tersedia, pemeriksaan registry
-     *    diserahkan kepada AccessChecker.
+     * 3. Jika HTTP verb TIDAK tersedia:
+     *    - Return METHOD_DISCOVERED_ONLY (allowed=true).
+     *    - Pemeriksaan Route Registry diserahkan ke AccessChecker.
+     *    - Ini adalah desain yang disengaja; AccessChecker WAJIB aktif
+     *      di production (lihat isSecurityFeatureEnabled()).
+     * 4. Jika HTTP verb tersedia, fallback ke Route Registry.
      *
      * @return array{allowed: bool, reason: string, endpoint?: string}
      */
@@ -224,7 +296,15 @@ class MethodPolicy
         if (! preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $controller)) {
             return [
                 'allowed' => false,
-                'reason' => 'INVALID_CONTROLLER_NAME',
+                'reason'  => 'INVALID_CONTROLLER_NAME',
+            ];
+        }
+
+        // Konflik case-insensitive pada controller → fail-closed.
+        if (isset($this->conflictedControllers[$controller])) {
+            return [
+                'allowed' => false,
+                'reason'  => 'METHOD_CONFLICTED',
             ];
         }
 
@@ -236,7 +316,7 @@ class MethodPolicy
         if ($resolved === null) {
             return [
                 'allowed' => false,
-                'reason' => 'METHOD_NOT_DISCOVERED',
+                'reason'  => 'METHOD_NOT_DISCOVERED',
             ];
         }
 
@@ -245,18 +325,18 @@ class MethodPolicy
         /*
          * 1. Static allowlist.
          */
-        if ($this->allowedMethods !== []) {
+        if ($this->hasAllowedMethods) {
             if (! isset($this->allowedLookup[strtolower($endpoint)])) {
                 return [
-                    'allowed' => false,
-                    'reason' => 'METHOD_NOT_ALLOWLISTED',
+                    'allowed'  => false,
+                    'reason'   => 'METHOD_NOT_ALLOWLISTED',
                     'endpoint' => $endpoint,
                 ];
             }
 
             return [
-                'allowed' => true,
-                'reason' => 'METHOD_ALLOWED_BY_CONFIG',
+                'allowed'  => true,
+                'reason'   => 'METHOD_ALLOWED_BY_CONFIG',
                 'endpoint' => $endpoint,
             ];
         }
@@ -264,13 +344,18 @@ class MethodPolicy
         /*
          * 2. Tanpa HTTP verb:
          * pemeriksaan Route Registry dilakukan oleh AccessChecker.
+         *
+         * Reason code METHOD_DISCOVERED_ONLY menandakan bahwa method
+         * LOLOS discovery, tetapi BELUM divalidasi registry.
+         * Pemanggil (DynamicRouterBase) WAJIB memastikan AccessChecker
+         * aktif agar ini tidak menjadi fail-open.
          */
         $httpVerb = strtoupper(trim($httpVerb));
 
         if ($httpVerb === '') {
             return [
-                'allowed' => true,
-                'reason' => 'METHOD_DISCOVERED_ONLY',
+                'allowed'  => true,
+                'reason'   => 'METHOD_DISCOVERED_ONLY',
                 'endpoint' => $endpoint,
             ];
         }
@@ -290,8 +375,8 @@ class MethodPolicy
             );
 
             return [
-                'allowed' => false,
-                'reason' => 'MODULE_CONTEXT_MISSING',
+                'allowed'  => false,
+                'reason'   => 'MODULE_CONTEXT_MISSING',
                 'endpoint' => $endpoint,
             ];
         }
@@ -307,26 +392,26 @@ class MethodPolicy
 
             if ($route === null) {
                 return [
-                    'allowed' => false,
-                    'reason' => 'ENDPOINT_NOT_REGISTERED',
+                    'allowed'  => false,
+                    'reason'   => 'ENDPOINT_NOT_REGISTERED',
                     'endpoint' => $endpoint,
                 ];
             }
 
             return [
-                'allowed' => true,
-                'reason' => 'METHOD_ALLOWED_BY_DATABASE',
+                'allowed'  => true,
+                'reason'   => 'METHOD_ALLOWED_BY_DATABASE',
                 'endpoint' => $endpoint,
             ];
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             log_message(
                 'error',
                 'MethodPolicy: gagal cek database — ' . $e->getMessage()
             );
 
             return [
-                'allowed' => false,
-                'reason' => 'REGISTRY_ERROR',
+                'allowed'  => false,
+                'reason'   => 'REGISTRY_ERROR',
                 'endpoint' => $endpoint,
             ];
         }
