@@ -316,11 +316,11 @@ foreach ($manifest['modules'] as $module => $entry) {
         continue;
     }
 
-    // API Core membutuhkan RBAC dan konteks organisasi.
-    // Modul lain tetap menggunakan filter API yang sudah berlaku.
-    $moduleApiFilter = $module === 'Core'
-        ? ['rbac', 'organization-context']
-        : $apiFilter;
+    // Semua API operasional wajib memiliki konteks organisasi aktif.
+    // Auth dikecualikan agar login/token/bootstrap tidak terkunci konteks.
+    $moduleApiFilter = $module === 'Auth'
+        ? $apiFilter
+        : ['rbac', 'organization-context'];
 
     $routes->group(
         "api/v1/{$prefix}",
