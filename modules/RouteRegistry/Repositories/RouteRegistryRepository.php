@@ -1101,13 +1101,12 @@ class RouteRegistryRepository
 
     public function syncPermissions(array $items): array
     {
-        $db = \Config\Database::connect();
 
         $inserted = 0;
         $existing = 0;
         $skipped = 0;
 
-        $db->transBegin();
+        $this->db->transBegin();
 
         try {
             foreach ($items as $item) {
@@ -1119,7 +1118,7 @@ class RouteRegistryRepository
                     continue;
                 }
 
-                $route = $db->table('route_registry')
+                $route = $this->db->table('route_registry')
                     ->select('id')
                     ->where('endpoint', $endpoint)
                     ->get()
@@ -1130,7 +1129,7 @@ class RouteRegistryRepository
                     continue;
                 }
 
-                $exists = $db->table('route_registry_permissions')
+                $exists = $this->db->table('route_registry_permissions')
                     ->where('route_id', $route['id'])
                     ->where('permission', $permission)
                     ->countAllResults() > 0;
@@ -1140,7 +1139,7 @@ class RouteRegistryRepository
                     continue;
                 }
 
-                $db->table('route_registry_permissions')->insert([
+                $this->db->table('route_registry_permissions')->insert([
                     'route_id'   => $route['id'],
                     'permission' => $permission,
                 ]);
@@ -1148,13 +1147,13 @@ class RouteRegistryRepository
                 $inserted++;
             }
 
-            if ($db->transStatus() === false) {
+            if ($this->db->transStatus() === false) {
                 throw new \RuntimeException(
                     'Gagal menyimpan relasi permission.'
                 );
             }
 
-            $db->transCommit();
+            $this->db->transCommit();
 
             return [
                 'inserted' => $inserted,
@@ -1162,7 +1161,7 @@ class RouteRegistryRepository
                 'skipped'  => $skipped,
             ];
         } catch (\Throwable $e) {
-            $db->transRollback();
+            $this->db->transRollback();
 
             throw $e;
         }
@@ -1171,7 +1170,6 @@ class RouteRegistryRepository
 
     public function syncNavigation(array $items): array
     {
-        $db = \Config\Database::connect();
 
         $result = [
             'inserted' => 0,
@@ -1180,7 +1178,7 @@ class RouteRegistryRepository
             'skipped'  => 0,
         ];
 
-        $db->transBegin();
+        $this->db->transBegin();
 
         try {
             foreach ($items as $item) {
@@ -1206,7 +1204,7 @@ class RouteRegistryRepository
                 }
 
                 // Cari route berdasarkan endpoint.
-                $route = $db->table('route_registry')
+                $route = $this->db->table('route_registry')
                     ->select('id')
                     ->where('endpoint', $endpoint)
                     ->get()
@@ -1214,7 +1212,7 @@ class RouteRegistryRepository
 
                 // Jika belum ada, daftarkan route terlebih dahulu.
                 if ($route === null) {
-                    $db->table('route_registry')->insert([
+                    $this->db->table('route_registry')->insert([
                         'module'        => $module,
                         'controller'    => $controller,
                         'method'        => $method,
@@ -1225,10 +1223,10 @@ class RouteRegistryRepository
                         'scan_status'   => 'new',
                     ]);
 
-                    $routeId = (int) $db->insertID();
+                    $routeId = (int) $this->db->insertID();
 
                     if ($routeId === 0) {
-                        $route = $db->table('route_registry')
+                        $route = $this->db->table('route_registry')
                             ->select('id')
                             ->where('endpoint', $endpoint)
                             ->get()
@@ -1256,7 +1254,7 @@ class RouteRegistryRepository
                     continue;
                 }
 
-                $menuTable = $db->table('route_registry_menus');
+                $menuTable = $this->db->table('route_registry_menus');
 
                 $existing = $menuTable
                     ->where('route_id', $routeId)
@@ -1295,17 +1293,17 @@ class RouteRegistryRepository
                 $result['inserted']++;
             }
 
-            if ($db->transStatus() === false) {
+            if ($this->db->transStatus() === false) {
                 throw new \RuntimeException(
                     'Sinkronisasi kandidat menu gagal.'
                 );
             }
 
-            $db->transCommit();
+            $this->db->transCommit();
 
             return $result;
         } catch (\Throwable $e) {
-            $db->transRollback();
+            $this->db->transRollback();
             throw $e;
         }
     }
