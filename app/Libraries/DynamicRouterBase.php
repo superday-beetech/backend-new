@@ -199,8 +199,211 @@ abstract class DynamicRouterBase extends Controller
         $this->controllerClasses  = $result['controllerClasses'];
     }
 
-
     public function route(
+        string $seg1 = '',
+        ?string $seg2 = null,
+        mixed ...$params
+    ): mixed {
+        $this->assertRouterInitialized();
+
+        /*
+         * 1. Status module/router.
+         */
+        if (! $this->enabled && ! $this->isSuperadmin()) {
+            throw PageNotFoundException::forPageNotFound();
+        }
+
+        /*
+         * 2. Validasi path policy.
+         */
+        $path   = trim($this->request->getUri()->getPath(), '/');
+        $policy = $this->rbacPolicy;
+
+        if (strlen($path) > $policy->maxPathLength) {
+            $this->rejectAsNotFound(
+                'path_policy',
+                'PATH_TOO_LONG',
+                ['length' => strlen($path)]
+            );
+        }
+
+        $segments = $path === '' ? [] : explode('/', $path);
+
+        if (count($segments) > $policy->maxSegments) {
+            $this->rejectAsNotFound(
+                'path_policy',
+                'TOO_MANY_SEGMENTS',
+                ['count' => count($segments)]
+            );
+        }
+
+        /*
+         * 3. Resolve controller, method, dan parameter.
+         */
+        [$controller, $method, $params] = $this->resolveControllerAndMethod(
+            $seg1,
+            $seg2,
+            $params
+        );
+
+        $params = $this->normalizeRouteParams($params);
+
+        /*
+         * 4. Controller allowlist — wajib semua environment.
+         */
+        if (! in_array($controller, $this->allowedControllers, true)) {
+            $this->rejectAsNotFound(
+                'controller_policy',
+                'CONTROLLER_NOT_ALLOWED',
+                ['controller' => $controller]
+            );
+        }
+
+        /*
+         * 5. Method discovery/static allowlist — wajib semua environment.
+         */
+        $methodDecision = $this->methodPolicy->diagnoseMethod(
+            $controller,
+            $method
+        );
+
+        if (! $methodDecision['allowed']) {
+            $this->rejectAsNotFound(
+                'method_policy',
+                $methodDecision['reason'],
+                [
+                    'controller' => $controller,
+                    'method'     => $method,
+                ]
+            );
+        }
+
+        $resolved = $this->methodPolicy->resolveDiscoveredMethod(
+            $controller,
+            $method
+        );
+
+        if ($resolved === null) {
+            $this->rejectAsNotFound(
+                'method_policy',
+                'METHOD_NOT_DISCOVERED',
+                [
+                    'controller' => $controller,
+                    'method'     => $method,
+                ]
+            );
+        }
+
+        $method   = $resolved;
+        $endpoint = $controller . '::' . $method;
+
+        /*
+         * 6. Rate limiting.
+         */
+        if (
+            $this->rateLimitEnabled
+            && ! $this->checkRateLimit($endpoint)
+        ) {
+            return $this->handleTooManyRequests($endpoint);
+        }
+
+        /*
+         * 7. Security settings.
+         * isSecurityFeatureEnabled() tetap menentukan apakah fitur
+         * boleh dilonggarkan di development/testing.
+         */
+        $checkAccess = $this->isSecurityFeatureEnabled(
+            'Core.checkAccess'
+        );
+
+        $checkHttpVerbs = $this->isSecurityFeatureEnabled(
+            'Core.httpVerbs'
+        );
+
+        /*
+         * 8. Authentication dan authorization.
+         */
+        if ($checkAccess) {
+            $decision = $this->accessChecker->diagnoseAccess($endpoint);
+
+            if (! $decision['allowed']) {
+                $this->auditDenied($endpoint, $decision);
+
+                return $this->routerResponseHandler
+                    ->handleAccessDecision($decision);
+            }
+        }
+
+        /*
+         * 9. HTTP verb policy tambahan.
+         */
+        if (
+            $checkHttpVerbs
+            && ! $this->isHttpVerbExcluded($endpoint)
+            && (
+                ! $checkAccess
+                || array_key_exists($endpoint, $this->allowedHttpVerbs)
+            )
+            && ! $this->checkHttpVerb($endpoint)
+        ) {
+            $this->logRejection(
+                'http_verb',
+                'HTTP_VERB_NOT_ALLOWED',
+                [
+                    'endpoint' => $endpoint,
+                    'verb'     => strtoupper($this->request->getMethod()),
+                ]
+            );
+
+            return $this->handleMethodNotAllowed(
+                'HTTP_VERB_NOT_ALLOWED',
+                null,
+                null,
+                $endpoint
+            );
+        }
+
+        /*
+         * 10. Before hooks.
+         */
+        foreach ($this->beforeRouteHooks as $hook) {
+            $this->assertHookCallable($hook, 'beforeRouteHooks');
+
+            $override = $hook($controller, $method, $params);
+
+            if ($override instanceof ResponseInterface) {
+                return $override;
+            }
+        }
+
+        /*
+         * 11. Jalankan controller.
+         */
+        $result = $this->runController(
+            $controller,
+            $method,
+            $params
+        );
+
+        /*
+         * 12. After hooks.
+         */
+        foreach ($this->afterRouteHooks as $hook) {
+            $this->assertHookCallable($hook, 'afterRouteHooks');
+
+            $hook(
+                $controller,
+                $method,
+                $params,
+                $result
+            );
+        }
+
+        return $result;
+    }
+
+
+    public function routeBanyakKomenHapusEnviromenyPadhalGuaJugaTau(
         string $seg1 = '',
         ?string $seg2 = null,
         mixed ...$params
