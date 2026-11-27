@@ -220,18 +220,28 @@ class AccessChecker
         }
 
         // 8. Bypass group hanya melewati grant permission.
+        // Route Registry, status route, HTTP verb, autentikasi,
+        // dan status akun sudah divalidasi sebelumnya.
         if ($isBypassGroup) {
-            if (! in_array($httpVerb, ['GET', 'POST', 'HEAD'], true)) {
-                log_message('info', "AccessChecker: bypass group diblokir untuk {$httpVerb} {$endpoint}");
-            } else {
-                return $this->decision(true, 'bypass_group', 'Akses diizinkan.', 200);
-            }
-        }
+            $bypassAllowedVerbs = ['GET', 'POST', 'HEAD'];
 
-        if ($isBypassGroup) {
-            // Bypass hanya melewati pemeriksaan permission.
-            // Route Registry, status route, HTTP verb, autentikasi,
-            // dan status akun sudah diperiksa sebelum blok ini.
+            if (! in_array($httpVerb, $bypassAllowedVerbs, true)) {
+                log_message(
+                    'warning',
+                    'AccessChecker: bypass group ditolak untuk HTTP verb {verb}, endpoint {endpoint}.',
+                    [
+                        'verb'     => $httpVerb,
+                        'endpoint' => $endpoint,
+                    ]
+                );
+
+                return $this->decision(
+                    false,
+                    'bypass_http_verb_denied',
+                    'Metode akses ini tidak diizinkan untuk grup bypass.',
+                    403
+                );
+            }
 
             return $this->decision(
                 true,
